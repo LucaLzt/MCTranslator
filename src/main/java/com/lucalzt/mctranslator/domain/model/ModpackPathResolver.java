@@ -40,6 +40,6 @@ public record ModpackPathResolver(Path modpackPath) {
      * @return El path hacia el Resource Pack exclusivo de MCTranslator.
      */
     public Path getResourcePacksPath() {
-        return modpackPath.resolve("resourcepakcs/MCTranslator-ES");
+        return modpackPath.resolve("resourcepacks/MCTranslator-ES");
     }
 }
