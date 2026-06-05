@@ -1,3 +1,27 @@
 spring:
   application:
     name: mctranslator
+  main:
+    web-application-type: none
+    banner-mode: off
+    log-startup-info: false
+
+logging:
+  level:
+    root: WARN
+    com.lucalzt: INFO
+
+# Configuración propia del negocio de MCTranslator
+mctranslator:
+  engine: ${MCTRANSLATOR_ENGINE:ollama}
+  chunk-size: ${MCTRANSLATOR_CHUNK_SIZE:5}
+
+  ai:
+    timeout-seconds: ${MCTRANSLATOR_TIMEOUT:90}
+
+  ollama:
+    url: ${OLLAMA_URL:http://localhost:11434}
+    model: ${OLLAMA_MODEL:mc-translator}
+
+  groq:
+    model: mixtral-8x7b-32768
