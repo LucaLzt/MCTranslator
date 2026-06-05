@@ -5,6 +5,7 @@ import com.lucalzt.mctranslator.ports.outbound.TranslationEnginePort;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 
 /**
  * Configuración de Spring encargada de registrar el motor de traducción activo.
@@ -25,6 +26,7 @@ public class TranslationConfig {
      * @return El adaptador activo inyectado bajo la abstracción del puerto de salida.
      */
     @Bean
+    @Primary
     public TranslationEnginePort translationEnginePort(OllamaRestClientAdapter ollamaAdapter) {
         LOGGER.log(System.Logger.Level.INFO, "Resolviendo motor de traducción activo configurado en properties: '{}'", activeEngine);
 
