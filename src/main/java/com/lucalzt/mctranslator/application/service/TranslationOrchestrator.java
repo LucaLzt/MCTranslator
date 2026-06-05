@@ -16,6 +16,7 @@ import com.lucalzt.mctranslator.ports.outbound.TranslationEnginePort;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.*;
 
 /**
@@ -136,6 +137,9 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
             // Conjunto para realizar la consolidación en caliente de checkpoints
             Set<String> progressKeys = new HashSet<>(checkpointKeys);
 
+            // Acumulador para consolidar todas las traducciones del mod en un solo mapa
+            Map<String, String> allTranslations = new HashMap<>();
+
             for (TranslationChunk chunk : chunks) {
                 LOGGER.log(System.Logger.Level.INFO, "Traduciendo lote {0}/{1} ({2} claves) para el mod '{3}'...",
                         chunk.chunkId() + 1, chunks.size(), chunk.size(), modId);
@@ -146,8 +150,9 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
                 // 6. Valido paridad e integridad lógica de la respuesta
                 validator.validate(chunk, result);
 
-                // 7. Escribo las traducciones validadas en la estructura física del Resource Pack
-                resourcePackGenerator.generate(modId, result, pathResolver.getResourcePacksPath());
+                // 7. Acumulo las traducciones y persisto el mapa completo del mod en el Resource Pack
+                allTranslations.putAll(result.translatedTranslations());
+                resourcePackGenerator.generate(modId, new TranslationResult(chunk.chunkId(), allTranslations, Instant.now()), pathResolver.getResourcePacksPath());
 
                 // 8. Actualizo acumulador local y consolidar progreso en el repositorio de checkpoints
                 progressKeys.addAll(chunk.translationsToTranslate().keySet());
