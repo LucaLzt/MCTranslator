@@ -12,6 +12,7 @@ import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -128,7 +129,12 @@ public class ZipFileSystemExtractorAdapter implements ModExtractorPort {
                         String modId = candidateDir.getFileName().toString().replace("/", "");
 
                         try (InputStream is = Files.newInputStream(enUsLangFile)) {
-                            Map<String, String> translations = objectMapper.readValue(is, new TypeReference<Map<String, String>>() {});
+                            Map<String, Object> raw = objectMapper.readValue(is, new TypeReference<Map<String, Object>>() {});
+                            Map<String, String> translations = new HashMap<>();
+                            for (Map.Entry<String, Object> entry : raw.entrySet()) {
+                                Object value = entry.getValue();
+                                translations.put(entry.getKey(), value instanceof String s ? s : String.valueOf(value));
+                            }
                             return new ModLanguageFile(modId, "en_us", translations);
                         }
                     }
