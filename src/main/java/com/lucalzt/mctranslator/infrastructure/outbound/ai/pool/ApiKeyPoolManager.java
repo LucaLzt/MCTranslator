@@ -1,4 +1,4 @@
-package com.lucalzt.mctranslator.infrastructure.outbound.ai;
+package com.lucalzt.mctranslator.infrastructure.outbound.ai.pool;
 
 import com.lucalzt.mctranslator.domain.exception.SessionFatalException;
 
