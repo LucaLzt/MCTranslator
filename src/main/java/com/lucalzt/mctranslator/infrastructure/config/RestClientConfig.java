@@ -8,6 +8,7 @@ import org.springframework.web.client.RestClient;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.concurrent.Executors;
 
 /**
  * Clase de infraestructura de Spring que configura y expone el cliente HTTP unificado (RestClient).
@@ -23,17 +24,19 @@ public class RestClientConfig {
     private int timeoutSeconds;
 
     /**
-     * Construye y expone un RestClient.Builder personalizado con la fábrica de peticiones HTTP de Java.
+     * Construye y expone un RestClient.Builder personalizado inyectando un despachador de hilos virtuales.
      *
-     * @return El constructor de clientes HTTP preconfigurado con timeouts de lectura y conexión.
+     * @return El constructor de clientes HTTP preconfigurado para paralelización masiva.
      */
     @Bean
     public RestClient.Builder restClientBuilder() {
-        LOGGER.log(System.Logger.Level.INFO, "Inicializando configuración de red de RestClient con timeouts de lectura establecidos en {} segundos.", timeoutSeconds);
+        LOGGER.log(System.Logger.Level.INFO, "Inicializando configuración de red de RestClient con timeouts de lectura establecidos en {0} segundos.",
+                timeoutSeconds);
 
         // Uso el HttpClient nativo de Java 21 (compatible con hilos virtuales)
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(15))
+                .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .build();
 
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
