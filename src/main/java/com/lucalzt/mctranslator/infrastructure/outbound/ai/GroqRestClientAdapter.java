@@ -37,21 +37,26 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
     private static final long INITIAL_BACKOFF_MS = 1000L;
     private static final long MAX_BACKOFF_MS = 16000L;
 
+    // Cuota de velocidad del modelo en el plan gratuito
+    private static final int MODEL_MAX_RPM = 30;
+
     // Fraccionador de sub-lotes óptimo
-    private static final int PARALLEL_SUB_CHUNK_SIZE = 5;
+    private static final int PARALLEL_SUB_CHUNK_SIZE = 25;
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
     private final ApiKeyPoolManager apiKeyPool;
     private final JsonSanitizer jsonSanitizer;
     private final String modelName;
+    private final int totalKeysConfigured;
 
     public GroqRestClientAdapter(
             RestClient.Builder restClientBuilder,
             ObjectMapper objectMapper,
             ApiKeyPoolManager apiKeyPool,
             @Value("${mctranslator.groq.url:https://api.groq.com/openai/v1}") String groqBaseUrl,
-            @Value("${mctranslator.groq.model:mixtral-8x7b-32768}") String modelName
+            @Value("${mctranslator.groq.model:meta-llama/llama-4-scout-17b-16e-instruct}") String modelName,
+            @Value("${mctranslator.groq.keys:}") String rawKeys
     ) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "El ObjectMapper de Jackson no puede ser nulo");
         this.apiKeyPool = Objects.requireNonNull(apiKeyPool, "El ApiKeyPoolManager no puede ser nulo");
@@ -60,6 +65,7 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
         this.restClient = restClientBuilder
                 .baseUrl(Objects.requireNonNull(groqBaseUrl, "La URL base de Groq no puede ser nula"))
                 .build();
+        this.totalKeysConfigured = (rawKeys == null || rawKeys.isBlank()) ? 1 : rawKeys.split(",").length;
     }
 
     /**
@@ -87,7 +93,18 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
                 final int subId = i;
                 final Map<String, String> subMap = subChunks.get(i);
 
+                // Pacing Proactivo: espacia las requests para nunca superar las RPM combinadas del plan
+                long pacingDelay = (60000L / MODEL_MAX_RPM) / totalKeysConfigured;
+                long totalPacingOffset = pacingDelay * i;
+
                 executor.submit(() -> {
+                    try {
+                        if (totalPacingOffset > 0) {
+                            Thread.sleep(totalPacingOffset);
+                        }
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
                     Map<String, String> translatedSubMap = translateSubChunkWithRetry(chunk.chunkId(), subId, subMap);
                     mergedResults.putAll(translatedSubMap);
                 });
