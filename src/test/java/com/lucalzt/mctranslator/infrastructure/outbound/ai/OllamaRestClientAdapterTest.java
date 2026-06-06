@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class OllamaRestClientAdapterTest {
 
     private static final String OLLAMA_BASE_URL = "http://localhost:11434";
+    private static final String OLLAMA_MODEL = "mc-test";
 
     private ObjectMapper objectMapper;
     private RestClient.Builder restClientBuilder;
@@ -28,7 +29,7 @@ class OllamaRestClientAdapterTest {
     void setUp() {
         objectMapper = new ObjectMapper();
         restClientBuilder = RestClient.builder();
-        adapter = new OllamaRestClientAdapter(restClientBuilder, objectMapper);
+        adapter = new OllamaRestClientAdapter(restClientBuilder, objectMapper, OLLAMA_BASE_URL, OLLAMA_MODEL);
     }
 
     // -------------------------------------------------------------------------
@@ -43,7 +44,21 @@ class OllamaRestClientAdapterTest {
         @DisplayName("throws NullPointerException when ObjectMapper is null")
         void throwsNullPointerException_whenObjectMapperIsNull() {
             assertThrows(NullPointerException.class,
-                    () -> new OllamaRestClientAdapter(restClientBuilder, null));
+                    () -> new OllamaRestClientAdapter(restClientBuilder, null, OLLAMA_BASE_URL, OLLAMA_MODEL));
+        }
+
+        @Test
+        @DisplayName("throws NullPointerException when baseUrl is null")
+        void throwsNullPointerException_whenBaseUrlIsNull() {
+            assertThrows(NullPointerException.class,
+                    () -> new OllamaRestClientAdapter(restClientBuilder, objectMapper, null, OLLAMA_MODEL));
+        }
+
+        @Test
+        @DisplayName("throws NullPointerException when model name is null")
+        void throwsNullPointerException_whenModelNameIsNull() {
+            assertThrows(NullPointerException.class,
+                    () -> new OllamaRestClientAdapter(restClientBuilder, objectMapper, OLLAMA_BASE_URL, null));
         }
 
         @Test

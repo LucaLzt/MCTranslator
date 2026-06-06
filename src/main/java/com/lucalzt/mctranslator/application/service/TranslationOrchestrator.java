@@ -1,5 +1,6 @@
 package com.lucalzt.mctranslator.application.service;
 
+import com.lucalzt.mctranslator.domain.exception.SessionFatalException;
 import com.lucalzt.mctranslator.domain.model.ModLanguageFile;
 import com.lucalzt.mctranslator.domain.model.ModpackPathResolver;
 import com.lucalzt.mctranslator.domain.model.TranslationChunk;
@@ -150,12 +151,20 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
                 // 6. Valido paridad e integridad lógica de la respuesta
                 validator.validate(chunk, result);
 
-                // 7. Acumulo las traducciones y persisto el mapa completo del mod en el Resource Pack
-                allTranslations.putAll(result.translatedTranslations());
+                // 7. Filtro traducciones vacías antes de persistir
+                Map<String, String> validTranslations = new HashMap<>();
+                for (var entry : result.translatedTranslations().entrySet()) {
+                    if (entry.getValue() != null && !entry.getValue().isBlank()) {
+                        validTranslations.put(entry.getKey(), entry.getValue());
+                    }
+                }
+
+                // 8. Acumulo las traducciones y persisto el mapa completo del mod en el Resource Pack
+                allTranslations.putAll(validTranslations);
                 resourcePackGenerator.generate(modId, new TranslationResult(chunk.chunkId(), allTranslations, Instant.now()), pathResolver.getResourcePacksPath());
 
-                // 8. Actualizo acumulador local y consolidar progreso en el repositorio de checkpoints
-                progressKeys.addAll(chunk.translationsToTranslate().keySet());
+                // 9. Solo agendo al checkpoint las claves que se tradujeron exitosamente
+                progressKeys.addAll(validTranslations.keySet());
                 checkpointRepository.save(modId, progressKeys);
 
                 LOGGER.log(System.Logger.Level.DEBUG, "Progreso guardado con éxito en el checkpoint para el lote {0} del mod '{1}'.",
@@ -164,6 +173,9 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
 
             LOGGER.log(System.Logger.Level.INFO, "Mod '{0}' ({1}) traducido y guardado exitosamente.", filename, modId);
 
+        } catch (SessionFatalException e) {
+            LOGGER.log(System.Logger.Level.ERROR, "Error fatal de sesión al procesar el mod '" + filename + "'. El pipeline se detiene.");
+            throw e;
         } catch (Exception e) {
             LOGGER.log(System.Logger.Level.ERROR, "Error no controlado al procesar el mod '" + filename + "'. El pipeline continuará con el siguiente mod por resiliencia.", e);
         }

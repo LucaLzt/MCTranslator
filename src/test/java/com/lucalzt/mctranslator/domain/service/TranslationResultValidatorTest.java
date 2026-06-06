@@ -63,21 +63,21 @@ class TranslationResultValidatorTest {
     class MissingKeys {
 
         @Test
-        @DisplayName("throws ChunkRetryableException when a required key is missing")
-        void keyMissingInResult_throwsChunkRetryableException() {
+        @DisplayName("logs warning but does not throw when some keys are missing and others are valid")
+        void keyMissingInResult_toleratedWhenSomeKeysAreValid() {
             var chunk = chunk(Map.of(KEY_FOO, "valor1", KEY_BAR, "valor2"));
             var result = result(Map.of(KEY_FOO, "valor1"));
 
-            assertThrows(ChunkRetryableException.class, () -> validator.validate(chunk, result));
+            assertDoesNotThrow(() -> validator.validate(chunk, result));
         }
 
         @Test
-        @DisplayName("throws ChunkRetryableException when multiple keys are missing")
-        void multipleKeysMissing_throwsOnFirstMissing() {
+        @DisplayName("logs warning but does not throw when many keys missing and some remain valid")
+        void multipleKeysMissing_toleratedWhenSomeRemainValid() {
             var chunk = chunk(Map.of(KEY_FOO, "v1", KEY_BAR, "v2", KEY_BAZ, "v3"));
             var result = result(Map.of(KEY_BAZ, "v3"));
 
-            assertThrows(ChunkRetryableException.class, () -> validator.validate(chunk, result));
+            assertDoesNotThrow(() -> validator.validate(chunk, result));
         }
     }
 
@@ -104,12 +104,12 @@ class TranslationResultValidatorTest {
         }
 
         @Test
-        @DisplayName("throws ChunkRetryableException when one of multiple values is invalid")
-        void firstInvalidAmongMultiple_throwsChunkRetryableException() {
+        @DisplayName("logs warning but does not throw when one of multiple values is invalid and others are valid")
+        void firstInvalidAmongMultiple_toleratedWhenOthersValid() {
             var chunk = chunk(Map.of(KEY_FOO, "v1", KEY_BAR, "v2"));
             var result = result(Map.of(KEY_FOO, "v1", KEY_BAR, ""));
 
-            assertThrows(ChunkRetryableException.class, () -> validator.validate(chunk, result));
+            assertDoesNotThrow(() -> validator.validate(chunk, result));
         }
     }
 
