@@ -16,15 +16,17 @@ import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClient;
 
 import java.time.Instant;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Adaptador de salida encargado de conectarse con la API de Groq en la nube.
  * * Implementa TranslationEnginePort.
  * * Utiliza ApiKeyPoolManager para rotar llaves dinámicamente ante saturaciones.
  * * Aplica backoff exponencial y lógica de descarte de credenciales inválidas en caliente.
+ * * Emplea hilos virtuales para maximizar la velocidad de la red sin bloqueos.
  */
 @Component
 public class GroqRestClientAdapter implements TranslationEnginePort {
@@ -35,69 +37,93 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
     private static final long INITIAL_BACKOFF_MS = 1000L;
     private static final long MAX_BACKOFF_MS = 16000L;
 
+    // Fraccionador de sub-lotes óptimo
+    private static final int PARALLEL_SUB_CHUNK_SIZE = 5;
+
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
     private final ApiKeyPoolManager apiKeyPool;
     private final JsonSanitizer jsonSanitizer;
+    private final String modelName;
 
-    @Value("${mctranslator.groq.url:[https://api.groq.com/openai/v1](https://api.groq.com/openai/v1)}")
-    private String groqBaseUrl;
-
-    @Value("${mctranslator.groq.model:mixtral-8x7b-32768}")
-    private String modelName;
+    public GroqRestClientAdapter(
+            RestClient.Builder restClientBuilder,
+            ObjectMapper objectMapper,
+            ApiKeyPoolManager apiKeyPool,
+            @Value("${mctranslator.groq.url:https://api.groq.com/openai/v1}") String groqBaseUrl,
+            @Value("${mctranslator.groq.model:mixtral-8x7b-32768}") String modelName
+    ) {
+        this.objectMapper = Objects.requireNonNull(objectMapper, "El ObjectMapper de Jackson no puede ser nulo");
+        this.apiKeyPool = Objects.requireNonNull(apiKeyPool, "El ApiKeyPoolManager no puede ser nulo");
+        this.modelName = Objects.requireNonNull(modelName, "El nombre del modelo no puede ser nulo");
+        this.jsonSanitizer = new JsonSanitizer();
+        this.restClient = restClientBuilder
+                .baseUrl(Objects.requireNonNull(groqBaseUrl, "La URL base de Groq no puede ser nula"))
+                .build();
+    }
 
     /**
      * Construye el adaptador inyectando las herramientas de red, serialización y el pool de credenciales.
      */
-    public GroqRestClientAdapter(
-            RestClient.Builder restClientBuilder,
-            ObjectMapper objectMapper,
-            ApiKeyPoolManager apiKeyPool
-    ) {
-        this.restClient = restClientBuilder.build();
-        this.objectMapper = Objects.requireNonNull(objectMapper, "El ObjectMapper de Jackson no puede ser nulo");
-        this.apiKeyPool = Objects.requireNonNull(apiKeyPool, "El ApiKeyPoolManager no puede ser nulo");
-        this.jsonSanitizer = new JsonSanitizer();
-    }
-
     @Override
     public TranslationResult translate(TranslationChunk chunk) {
         Objects.requireNonNull(chunk, "El lote de traducción no puede ser nulo");
 
-        LOGGER.log(System.Logger.Level.INFO, "Iniciando traducción en Groq con modelo: '{0}'. Lote ID: {1}", modelName, chunk.chunkId());
+        Map<String, String> totalTranslations = chunk.translationsToTranslate();
+        if (totalTranslations.isEmpty()) {
+            return new TranslationResult((chunk.chunkId()), Collections.emptyMap(), Instant.now());
+        }
 
-        String prompt = buildPrompt(chunk.translationsToTranslate());
+        // Divido el chunk actual en mapas más pequeños para las traducciones simultáneas
+        List<Map<String, String>> subChunks = splitMap(totalTranslations, PARALLEL_SUB_CHUNK_SIZE);
+        LOGGER.log(System.Logger.Level.INFO, "Paralelizando Lote ID: {0} en {1} sub-peticiones de red vía hilos virtuales",
+                chunk.chunkId(), subChunks.size());
 
-        // Estructura de payload compatible con la API de chat de OpenAI/Groq
+        Map<String, String> mergedResults = new ConcurrentHashMap<>();
+
+        // Creo un ejecutor de hilos virtuales para enviar las peticiones
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            for (int i = 0; i < subChunks.size(); i++) {
+                final int subId = i;
+                final Map<String, String> subMap = subChunks.get(i);
+
+                executor.submit(() -> {
+                    Map<String, String> translatedSubMap = translateSubChunkWithRetry(chunk.chunkId(), subId, subMap);
+                    mergedResults.putAll(translatedSubMap);
+                });
+            }
+        }
+
+        LOGGER.log(System.Logger.Level.INFO, "Traducción paralela completa para Lote ID: {0}. Fusionadas {1} claves traducidas.",
+                chunk.chunkId(), mergedResults.size());
+
+        return new TranslationResult(chunk.chunkId(), Map.copyOf(mergedResults), Instant.now());
+    }
+
+    private Map<String, String> translateSubChunkWithRetry(int parentChunkId, int subId, Map<String, String> subMap) {
+        String prompt = buildPrompt(subMap);
         GroqRequest payload = new GroqRequest(
                 modelName,
                 List.of(
-                        new Message(
-                                "system",
-                                """
-                                    Eres un traductor de localización de Minecraft ultra preciso. Debes responder 
-                                    exclusivamente con un mapa de JSON válido
-                                    """),
-                        new Message(
-                                "user",
-                                prompt
-                        )
+                        new Message("system", "Eres un traductor de localización de Minecraft ultra preciso. Debes responder exclusivamente con un mapa de JSON válido."),
+                        new Message("user", prompt)
                 ),
-                0.0, // Temperatura 0.1 para mitigar alucinaciones en las traducciones
-                new ResponseFormat("json_object") // Fuerzo el modo JSON estricto
+                0.0,
+                new ResponseFormat("json_object")
         );
 
         long backoffMs = INITIAL_BACKOFF_MS;
 
         for (int intento = 1; intento <= MAX_RETRIES; intento++) {
+            // apiKeyPool.next() es sincronizado, por lo que su consumo es 100% seguro desde hilos concurrentes
             String activeKey = apiKeyPool.next();
 
             try {
-                LOGGER.log(System.Logger.Level.DEBUG, "Lanzando petición REST a Groq. Intento {0}/{1}. Lote ID: {2}",
-                        intento, MAX_RETRIES, chunk.chunkId());
+                LOGGER.log(System.Logger.Level.DEBUG, "Sub-lote {0}/{1}. Lanzando petición REST a Groq. Intento {2}/{3}.",
+                        parentChunkId, subId, intento, MAX_RETRIES);
 
                 GroqResponse response = restClient.post()
-                        .uri(groqBaseUrl + "/chat/completions")
+                        .uri("/chat/completions")
                         .header("Authorization", "Bearer " + activeKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .body(payload)
@@ -105,59 +131,58 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
                         .body(GroqResponse.class);
 
                 if (response == null || response.choices() == null || response.choices().isEmpty()) {
-                    throw new RuntimeException("La API de Groq retornó una estructura de respuesta vacía o incompleta.");
+                    throw new RuntimeException("La API de Groq retornó una respuesta vacía.");
                 }
 
-                // Obtengo el texto crudo de la respuesta del modelo
                 String rawTextResponse = response.choices().getFirst().message().content();
-
-                // 1. Sanitizo respuesta de la IA
                 String cleanJson = jsonSanitizer.sanitize(rawTextResponse);
 
-                // 2. Mapeo a un mapa estructurado
                 Map<String, String> translatedMap = objectMapper.readValue(
                         cleanJson,
                         new TypeReference<Map<String, String>>() {}
                 );
 
-                // Si llegamos acá, significa que salió bien. Reseteamos los fallos acumulados de la llave activa.
                 apiKeyPool.resetFailures(activeKey);
-
-                LOGGER.log(System.Logger.Level.INFO, "Lote ID {0} traducido con éxito por Groq en el intento {1}.",
-                        chunk.chunkId(), intento);
-
-                return new TranslationResult(chunk.chunkId(), translatedMap, Instant.now());
-
+                return translatedMap;
             } catch (HttpStatusCodeException ex) {
                 int statusCode = ex.getStatusCode().value();
-                LOGGER.log(System.Logger.Level.WARNING, "Error HTTP {0} recibido de la API de Groq en el intento {1}.",
-                        statusCode, intento);
-
                 switch (statusCode) {
                     case 429 -> {
                         apiKeyPool.recordFailure(activeKey);
-                        backoffMs = sleepAndCalculateBackoff(backoffMs, "Límite de tasa (Rate Limit) alcanzado (HTTP 429).");
+                        backoffMs = sleepAndCalculateBackoff(backoffMs, "Límite de tasa (Rate Limit) HTTP 429.");
                     }
                     case 401, 403 -> {
                         apiKeyPool.markAsInvalid(activeKey);
-                        LOGGER.log(System.Logger.Level.WARNING, "Llave rechazada. Saltando a la siguiente llave disponible de inmediato.");
                     }
                     case 400, 413, 422 -> {
-                        LOGGER.log(System.Logger.Level.ERROR, "Fallo de validación irrecuperable en el lote. Detallando error: {0}", ex.getResponseBodyAsString());
-                        throw new ChunkFatalException("La API de Groq rechazó la estructura del lote enviado por ser semánticamente inválido o exceder límites.", chunk.chunkId(), ex);
+                        throw new ChunkFatalException("Error fatal en sub-lote " + subId, parentChunkId, ex);
                     }
-                    default -> backoffMs = sleepAndCalculateBackoff(backoffMs, "Error de red intermitente o caída del servidor de Groq (HTTP " + statusCode + ").");
+                    default -> {
+                        backoffMs = sleepAndCalculateBackoff(backoffMs, "Error HTTP " + statusCode);
+                    }
                 }
-
             } catch (Exception e) {
-                // Captura de timeouts o fallos de lectura de JSON
-                LOGGER.log(System.Logger.Level.WARNING, "Error inusual durante la llamada en el intento {0}: {1}", intento, e.getMessage());
-                backoffMs = sleepAndCalculateBackoff(backoffMs, "Excepción de comunicación de red: " + e.getClass().getSimpleName());
+                backoffMs = sleepAndCalculateBackoff(backoffMs, "Error de comunicación: " + e.getClass().getSimpleName());
             }
         }
 
-        // Si agotamos todos los reintentos para este lote, levantamos un error reintentable para que el orquestador lo gestione
-        throw new ChunkRetryableException("Se agotaron todos los reintentos de comunicación con la API de Groq sin éxito estructural.", chunk.chunkId());
+        throw new ChunkRetryableException("Se agotaron los reintentos en el sub-lote " + subId, parentChunkId);
+    }
+
+    private List<Map<String, String>> splitMap(Map<String, String> originalMap, int size) {
+        List<Map<String, String>> list = new ArrayList<>();
+        Map<String, String> current = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : originalMap.entrySet()) {
+            current.put(entry.getKey(), entry.getValue());
+            if (current.size() >= size) {
+                list.add(current);
+                current = new LinkedHashMap<>();
+            }
+        }
+        if (!current.isEmpty()) {
+            list.add(current);
+        }
+        return list;
     }
 
     private long sleepAndCalculateBackoff(long currentBackoffMs, String reason) {
