@@ -26,8 +26,8 @@ public class InteractiveWizard {
     @Value("${mctranslator.groq.model:meta-llama/llama-4-scout-17b-16e-instruct}")
     private String defaultGroqModel;
 
-    @Value("${mctranslator.groq.keys:}")
-    private String defaultGroqKeys;
+    @Value("${mctranslator.groq.key:}")
+    private String defaultGroqKey;
 
     public TranslationConfigDTO promptUser() {
         try (Scanner scanner = new Scanner(System.in)) {
@@ -62,7 +62,7 @@ public class InteractiveWizard {
                 if (!url.isBlank() && !url.equals(defaultGroqUrl)) groqUrl = url;
                 String model = readWithDefault(scanner, "\uD83D\uDCE6 Modelo Groq", defaultGroqModel);
                 if (!model.isBlank() && !model.equals(defaultGroqModel)) groqModel = model;
-                String keysHint = defaultGroqKeys.isBlank() ? "(ninguna)" : "(configuradas en application.yml)";
+                String keysHint = defaultGroqKey.isBlank() ? "(ninguna)" : "(configurada en application.yml)";
                 String keys = readWithDefault(scanner, "\uD83D\uDD11 API Keys Groq", keysHint);
                 if (!keys.isBlank() && !keys.equals(keysHint)) groqKeys = keys;
             }
@@ -71,7 +71,8 @@ public class InteractiveWizard {
 
             return new TranslationConfigDTO(
                     modpackPath, engine, chunkSize,
-                    ollamaUrl, ollamaModel, groqUrl, groqModel, groqKeys
+                    ollamaUrl, ollamaModel, groqUrl, groqModel, groqKeys,
+                    null, null, null
             );
         }
     }

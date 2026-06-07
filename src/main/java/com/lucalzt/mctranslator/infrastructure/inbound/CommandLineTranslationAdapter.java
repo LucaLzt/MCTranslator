@@ -84,7 +84,8 @@ public class CommandLineTranslationAdapter implements CommandLineRunner, Callabl
                 } else if ("groq".equalsIgnoreCase(cfg.engine())) {
                     GroqRestClientAdapter adapter = (GroqRestClientAdapter) engineRegistry.get("groq");
                     if (adapter != null) {
-                        adapter.reconfigure(cfg.groqUrl(), cfg.groqModel(), cfg.groqKeys());
+                        adapter.reconfigure(cfg.groqUrl(), cfg.groqModel(), cfg.groqKeys(),
+                                cfg.groqRpm(), cfg.groqMaxTokens(), cfg.groqTpm());
                     }
                 }
 
