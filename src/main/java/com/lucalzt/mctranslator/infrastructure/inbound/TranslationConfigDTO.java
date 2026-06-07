@@ -8,5 +8,8 @@ public record TranslationConfigDTO(
     String ollamaModel,
     String groqUrl,
     String groqModel,
-    String groqKeys
+    String groqKeys,
+    Integer groqRpm,
+    Integer groqMaxTokens,
+    Integer groqTpm
 ) {}
