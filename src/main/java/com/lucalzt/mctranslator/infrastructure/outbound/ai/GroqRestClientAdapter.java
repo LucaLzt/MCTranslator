@@ -8,8 +8,11 @@ import com.lucalzt.mctranslator.domain.exception.SessionFatalException;
 import com.lucalzt.mctranslator.domain.model.TranslationChunk;
 import com.lucalzt.mctranslator.domain.model.TranslationResult;
 import com.lucalzt.mctranslator.domain.service.JsonSanitizer;
+import com.lucalzt.mctranslator.infrastructure.config.EngineRegistry;
 import com.lucalzt.mctranslator.infrastructure.outbound.ai.pool.ApiKeyPoolManager;
 import com.lucalzt.mctranslator.ports.outbound.TranslationEnginePort;
+import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -23,14 +26,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * Adaptador de salida encargado de conectarse con la API de Groq en la nube.
- * * Versión de Grado de Producción con Cascada Dinámica y Pacing Adaptativo por Modelo.
- * * Rotación automática de modelos de respaldo para exprimir hasta 3,000,000 de tokens gratuitos por día.
- * * Utiliza registros de metadatos para optimizar la velocidad de red en base al RPM de cada LLM.
- * * Utiliza ApiKeyPoolManager para rotar llaves dinámicamente ante saturaciones.
- * * Aplica backoff exponencial y lógica de descarte de credenciales inválidas en caliente.
- */
 @Component
 public class GroqRestClientAdapter implements TranslationEnginePort {
 
@@ -41,19 +36,34 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
     private static final long MAX_BACKOFF_MS = 16000L;
     private static final int ESTIMATED_TOKENS_PER_KEY = 400;
 
-    private final RestClient restClient;
+    private final RestClient.Builder restClientBuilder;
+    private RestClient restClient;
     private final ObjectMapper objectMapper;
-    private final ApiKeyPoolManager apiKeyPool;
+    private ApiKeyPoolManager apiKeyPool;
     private final JsonSanitizer jsonSanitizer;
-    private final int totalKeysConfigured;
+    private volatile int totalKeysConfigured;
 
-    private final List<ModelMetadata> modelCascade = List.of(
+    private volatile List<ModelMetadata> modelCascade = List.of(
             new ModelMetadata("meta-llama/llama-4-scout-17b-16e-instruct", 30, 30, 4096, true, 500000),
             new ModelMetadata("qwen/qwen3-32b", 60, 5, 4096, false, 6000),
             new ModelMetadata("llama-3.1-8b-instant", 30, 10, 4096, true, 6000)
     );
 
     private final AtomicInteger activeModelIndex = new AtomicInteger(0);
+
+    private EngineRegistry engineRegistry;
+
+    @Autowired
+    public void setEngineRegistry(EngineRegistry engineRegistry) {
+        this.engineRegistry = engineRegistry;
+    }
+
+    @PostConstruct
+    public void register() {
+        if (engineRegistry != null) {
+            engineRegistry.register("groq", this);
+        }
+    }
 
     public GroqRestClientAdapter(
             RestClient.Builder restClientBuilder,
@@ -63,6 +73,7 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
             @Value("${mctranslator.groq.keys:}") String rawKeys
     ) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "El ObjectMapper de Jackson no puede ser nulo");
+        this.restClientBuilder = Objects.requireNonNull(restClientBuilder, "El RestClient.Builder no puede ser nulo");
         this.apiKeyPool = Objects.requireNonNull(apiKeyPool, "El ApiKeyPoolManager no puede ser nulo");
         this.jsonSanitizer = new JsonSanitizer();
         this.restClient = restClientBuilder
@@ -71,9 +82,33 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
         this.totalKeysConfigured = (rawKeys == null || rawKeys.isBlank()) ? 1 : rawKeys.split(",").length;
     }
 
+    public void reconfigure(String url, String model, String keys) {
+        if (url != null && !url.isBlank()) {
+            this.restClient = this.restClientBuilder
+                    .baseUrl(url)
+                    .build();
+        }
+        if (model != null && !model.isBlank()) {
+            this.modelCascade = List.of(
+                    new ModelMetadata(model, 30, 10, 4096, true, 6000)
+            );
+            this.activeModelIndex.set(0);
+        }
+        if (keys != null && !keys.isBlank()) {
+            List<String> keysList = Arrays.stream(keys.split(","))
+                    .map(String::trim)
+                    .filter(k -> !k.isEmpty())
+                    .toList();
+            if (!keysList.isEmpty()) {
+                this.apiKeyPool = new ApiKeyPoolManager(keysList);
+                this.totalKeysConfigured = keysList.size();
+            }
+        }
+    }
+
     @Override
     public TranslationResult translate(TranslationChunk chunk) {
-        Objects.requireNonNull(chunk, "El lote de traducción no puede ser nulo");
+        Objects.requireNonNull(chunk, "El lote de traducci\u00f3n no puede ser nulo");
 
         Map<String, String> totalTranslations = chunk.translationsToTranslate();
         if (totalTranslations.isEmpty()) {
@@ -149,7 +184,7 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
             GroqRequest payload = new GroqRequest(
                     activeModel,
                     List.of(
-                            new Message("system", "Traduce el JSON de Minecraft de inglés a español (es_es). Conserva claves y códigos de formato intactos. Responde únicamente con el JSON."),
+                            new Message("system", "Traduce el JSON de Minecraft de ingl\u00e9s a espa\u00f1ol (es_es). Conserva claves y c\u00f3digos de formato intactos. Responde \u00fanicamente con el JSON."),
                             new Message("user", buildPrompt(subMap))
                     ),
                     0.0,
@@ -170,7 +205,7 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
                         .body(GroqResponse.class);
 
                 if (response == null || response.choices() == null || response.choices().isEmpty()) {
-                    throw new RuntimeException("La API de Groq retornó una respuesta vacía.");
+                    throw new RuntimeException("La API de Groq retorn\u00f3 una respuesta vac\u00eda.");
                 }
 
                 String rawTextResponse = response.choices().getFirst().message().content();
@@ -201,7 +236,7 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
                     case 401, 403 -> apiKeyPool.markAsInvalid(activeKey);
                     case 400, 413, 422 -> {
                         if (errorBody.contains("json_validate_failed") || errorBody.contains("max completion tokens")) {
-                            backoffMs = sleepAndCalculateBackoff(backoffMs, "Modelo agotó tokens de salida (json_validate_failed).");
+                            backoffMs = sleepAndCalculateBackoff(backoffMs, "Modelo agot\u00f3 tokens de salida (json_validate_failed).");
                         } else {
                             throw new ChunkFatalException("Error fatal en sub-lote " + (subIdx + 1), parentChunkId, ex);
                         }
@@ -270,7 +305,7 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
     }
 
     private long sleepAndCalculateBackoff(long currentBackoffMs, String reason) {
-        LOGGER.log(System.Logger.Level.WARNING, "{0} — pausa {1}ms", reason, currentBackoffMs);
+        LOGGER.log(System.Logger.Level.WARNING, "{0} \u2014 pausa {1}ms", reason, currentBackoffMs);
         try {
             Thread.sleep(currentBackoffMs);
         } catch (InterruptedException ie) {
@@ -288,7 +323,6 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
         }
     }
 
-    // --- Registros de metadatos internos de infraestructura ---
     private record ModelMetadata(String id, int rpmLimit, int subChunkSize, int maxTokens, boolean parallel, int tpmLimit) {}
     private record GroqRequest(String model, List<Message> messages, double temperature, ResponseFormat response_format, int max_tokens) {}
     private record Message(String role, String content) {}
