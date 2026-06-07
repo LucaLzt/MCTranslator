@@ -1,8 +1,10 @@
 package com.lucalzt.mctranslator.infrastructure.inbound;
 
+import com.lucalzt.mctranslator.infrastructure.config.EngineRegistry;
+import com.lucalzt.mctranslator.infrastructure.outbound.ai.GroqRestClientAdapter;
+import com.lucalzt.mctranslator.infrastructure.outbound.ai.OllamaRestClientAdapter;
 import com.lucalzt.mctranslator.infrastructure.outbound.persistence.JsonCheckpointRepositoryAdapter;
 import com.lucalzt.mctranslator.ports.inbound.TranslateModpackUseCase;
-import org.jspecify.annotations.NonNull;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 import picocli.CommandLine;
@@ -31,47 +33,86 @@ public class CommandLineTranslationAdapter implements CommandLineRunner, Callabl
     @Option(
             names = "--modpack",
             description = "Ruta absoluta del directorio del modpack a procesar.",
-            required = true,
+            required = false,
             paramLabel = "<RUTA>"
     )
     private Path modpackPath;
 
+    @Option(
+            names = "--wizard",
+            description = "Forzar modo interactivo aunque se hayan pasado argumentos.",
+            required = false
+    )
+    private boolean forceWizard;
+
     private final TranslateModpackUseCase translateModpackUseCase;
     private final JsonCheckpointRepositoryAdapter checkpointRepository;
+    private final InteractiveWizard wizard;
+    private final EngineRegistry engineRegistry;
 
     public CommandLineTranslationAdapter(
             TranslateModpackUseCase translateModpackUseCase,
-            JsonCheckpointRepositoryAdapter checkpointRepository
+            JsonCheckpointRepositoryAdapter checkpointRepository,
+            InteractiveWizard wizard,
+            EngineRegistry engineRegistry
     ) {
         this.translateModpackUseCase = translateModpackUseCase;
         this.checkpointRepository = checkpointRepository;
+        this.wizard = wizard;
+        this.engineRegistry = engineRegistry;
     }
 
     @Override
     public void run(String... args) {
-        if (args.length == 0) {
-            return;
-        }
         int exitCode = new CommandLine(this).execute(args);
-        System.exit(exitCode);
+        if (exitCode != 0) {
+            System.exit(exitCode);
+        }
     }
 
     @Override
     public Integer call() {
         try {
-            Path absolutePath = modpackPath.toAbsolutePath();
+            if (modpackPath == null || forceWizard) {
+                TranslationConfigDTO cfg = wizard.promptUser();
 
-            if (!absolutePath.toFile().exists()) {
-                LOGGER.log(System.Logger.Level.ERROR, "La ruta especificada no existe: {0}", absolutePath);
-                return 2;
+                if ("ollama".equalsIgnoreCase(cfg.engine())) {
+                    OllamaRestClientAdapter adapter = (OllamaRestClientAdapter) engineRegistry.get("ollama");
+                    if (adapter != null) {
+                        adapter.reconfigure(cfg.ollamaUrl(), cfg.ollamaModel());
+                    }
+                } else if ("groq".equalsIgnoreCase(cfg.engine())) {
+                    GroqRestClientAdapter adapter = (GroqRestClientAdapter) engineRegistry.get("groq");
+                    if (adapter != null) {
+                        adapter.reconfigure(cfg.groqUrl(), cfg.groqModel(), cfg.groqKeys());
+                    }
+                }
+
+                Path absolutePath = Path.of(cfg.modpackPath()).toAbsolutePath();
+                if (!absolutePath.toFile().exists()) {
+                    LOGGER.log(System.Logger.Level.ERROR, "La ruta especificada no existe: {0}", absolutePath);
+                    return 2;
+                }
+
+                checkpointRepository.setModpackPath(absolutePath);
+                LOGGER.log(System.Logger.Level.INFO, "Repositorio de checkpoints enlazado exitosamente al directorio del modpack.");
+
+                translateModpackUseCase.execute(cfg.modpackPath(), cfg);
+            } else {
+                Path absolutePath = modpackPath.toAbsolutePath();
+
+                if (!absolutePath.toFile().exists()) {
+                    LOGGER.log(System.Logger.Level.ERROR, "La ruta especificada no existe: {0}", absolutePath);
+                    return 2;
+                }
+
+                LOGGER.log(System.Logger.Level.INFO, "Ruta del modpack recibida e identificada con \u00e9xito: '{}'", absolutePath);
+
+                checkpointRepository.setModpackPath(absolutePath);
+                LOGGER.log(System.Logger.Level.INFO, "Repositorio de checkpoints enlazado exitosamente al directorio del modpack.");
+
+                translateModpackUseCase.execute(absolutePath.toString());
             }
-
-            LOGGER.log(System.Logger.Level.INFO, "Ruta del modpack recibida e identificada con \u00e9xito: '{}'", absolutePath);
-
-            checkpointRepository.setModpackPath(absolutePath);
-            LOGGER.log(System.Logger.Level.INFO, "Repositorio de checkpoints enlazado exitosamente al directorio del modpack.");
-
-            translateModpackUseCase.execute(absolutePath.toString());
 
             LOGGER.log(System.Logger.Level.INFO, "==================================================================");
             LOGGER.log(System.Logger.Level.INFO, "\u00a1PROCESO COMPLETADO! Las traducciones se han generado con \u00e9xito.");
