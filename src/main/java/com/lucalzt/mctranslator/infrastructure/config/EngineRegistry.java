@@ -3,13 +3,13 @@ package com.lucalzt.mctranslator.infrastructure.config;
 import com.lucalzt.mctranslator.ports.outbound.TranslationEnginePort;
 import org.springframework.stereotype.Component;
 
+import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class EngineRegistry {
 
-    private final Map<String, TranslationEnginePort> engines = new ConcurrentHashMap<>();
+    private final Map<String, TranslationEnginePort> engines = new HashMap<>();
     private volatile String activeEngine;
 
     public void register(String name, TranslationEnginePort adapter) {
