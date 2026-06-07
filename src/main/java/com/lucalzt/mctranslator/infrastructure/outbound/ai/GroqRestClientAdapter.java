@@ -4,12 +4,10 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lucalzt.mctranslator.domain.exception.ChunkFatalException;
 import com.lucalzt.mctranslator.domain.exception.ChunkRetryableException;
-import com.lucalzt.mctranslator.domain.exception.SessionFatalException;
 import com.lucalzt.mctranslator.domain.model.TranslationChunk;
 import com.lucalzt.mctranslator.domain.model.TranslationResult;
 import com.lucalzt.mctranslator.domain.service.JsonSanitizer;
 import com.lucalzt.mctranslator.infrastructure.config.EngineRegistry;
-import com.lucalzt.mctranslator.infrastructure.outbound.ai.pool.ApiKeyPoolManager;
 import com.lucalzt.mctranslator.ports.outbound.TranslationEnginePort;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,37 +19,26 @@ import org.springframework.web.client.RestClient;
 
 import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
 public class GroqRestClientAdapter implements TranslationEnginePort {
 
     private static final System.Logger LOGGER = System.getLogger(GroqRestClientAdapter.class.getName());
-
     private static final int MAX_RETRIES = 5;
     private static final long INITIAL_BACKOFF_MS = 1000L;
     private static final long MAX_BACKOFF_MS = 16000L;
     private static final int ESTIMATED_TOKENS_PER_KEY = 400;
 
     private final RestClient.Builder restClientBuilder;
-    private RestClient restClient;
     private final ObjectMapper objectMapper;
-    private ApiKeyPoolManager apiKeyPool;
     private final JsonSanitizer jsonSanitizer;
-    private volatile int totalKeysConfigured;
 
-    private volatile List<ModelMetadata> modelCascade = List.of(
-            new ModelMetadata("meta-llama/llama-4-scout-17b-16e-instruct", 30, 30, 4096, true, 500000),
-            new ModelMetadata("qwen/qwen3-32b", 60, 5, 4096, false, 6000),
-            new ModelMetadata("llama-3.1-8b-instant", 30, 10, 4096, true, 6000)
-    );
-
-    private final AtomicInteger activeModelIndex = new AtomicInteger(0);
-
+    private RestClient restClient;
+    private String apiKey;
     private EngineRegistry engineRegistry;
+
+    private volatile ModelMetadata currentModel = new ModelMetadata(
+            "meta-llama/llama-4-scout-17b-16e-instruct", 30, 8192, 500000);
 
     @Autowired
     public void setEngineRegistry(EngineRegistry engineRegistry) {
@@ -68,41 +55,34 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
     public GroqRestClientAdapter(
             RestClient.Builder restClientBuilder,
             ObjectMapper objectMapper,
-            ApiKeyPoolManager apiKeyPool,
             @Value("${mctranslator.groq.url:https://api.groq.com/openai/v1}") String groqBaseUrl,
-            @Value("${mctranslator.groq.keys:}") String rawKeys
+            @Value("${mctranslator.groq.key:}") String rawKey
     ) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "El ObjectMapper de Jackson no puede ser nulo");
         this.restClientBuilder = Objects.requireNonNull(restClientBuilder, "El RestClient.Builder no puede ser nulo");
-        this.apiKeyPool = Objects.requireNonNull(apiKeyPool, "El ApiKeyPoolManager no puede ser nulo");
         this.jsonSanitizer = new JsonSanitizer();
         this.restClient = restClientBuilder
                 .baseUrl(Objects.requireNonNull(groqBaseUrl, "La URL base de Groq no puede ser nula"))
                 .build();
-        this.totalKeysConfigured = (rawKeys == null || rawKeys.isBlank()) ? 1 : rawKeys.split(",").length;
+        this.apiKey = (rawKey == null || rawKey.isBlank()) ? "DUMMY_KEY" : rawKey;
     }
 
-    public void reconfigure(String url, String model, String keys) {
+    public void reconfigure(String url, String model, String key, Integer rpm, Integer maxTokens, Integer tpm) {
         if (url != null && !url.isBlank()) {
             this.restClient = this.restClientBuilder
                     .baseUrl(url)
                     .build();
         }
         if (model != null && !model.isBlank()) {
-            this.modelCascade = List.of(
-                    new ModelMetadata(model, 30, 10, 4096, true, 6000)
+            this.currentModel = new ModelMetadata(
+                    model,
+                    rpm != null ? rpm : 30,
+                    maxTokens != null ? maxTokens : 8192,
+                    tpm != null ? tpm : 500000
             );
-            this.activeModelIndex.set(0);
         }
-        if (keys != null && !keys.isBlank()) {
-            List<String> keysList = Arrays.stream(keys.split(","))
-                    .map(String::trim)
-                    .filter(k -> !k.isEmpty())
-                    .toList();
-            if (!keysList.isEmpty()) {
-                this.apiKeyPool = new ApiKeyPoolManager(keysList);
-                this.totalKeysConfigured = keysList.size();
-            }
+        if (key != null && !key.isBlank()) {
+            this.apiKey = key;
         }
     }
 
@@ -115,77 +95,39 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
             return new TranslationResult(chunk.chunkId(), Collections.emptyMap(), Instant.now());
         }
 
-        ModelMetadata activeModelMeta = getActiveModelMetadata();
-        String activeModelName = activeModelMeta.id();
-        int activeModelRpm = activeModelMeta.rpmLimit();
-        int activeSubChunkSize = activeModelMeta.subChunkSize();
+        String modelName = currentModel.id();
+        int modelRpm = currentModel.rpmLimit();
+        int requestKeyCount = totalTranslations.size();
 
-        List<Map<String, String>> subChunks = splitMap(totalTranslations, activeSubChunkSize);
-        int totalSubChunks = subChunks.size();
+        long pacingDelay = calculatePacingDelay(currentModel, requestKeyCount);
+        LOGGER.log(System.Logger.Level.INFO, "Lote {0}: {1} claves, modelo {2} ({3} RPM, pausa {4}ms)",
+                chunk.chunkId(), requestKeyCount, modelName, modelRpm, pacingDelay);
 
-        long pacingDelay = calculatePacingDelay(activeModelMeta, totalKeysConfigured);
-
-        LOGGER.log(System.Logger.Level.INFO, "Lote {0} dividido en {1} sub-lotes. Modelo: {2} ({3} RPM, {4} claves/sub-lote, pausa {5}ms)",
-                chunk.chunkId(), totalSubChunks, activeModelName, activeModelRpm, activeSubChunkSize, pacingDelay);
-        Map<String, String> mergedResults = new ConcurrentHashMap<>();
-
-        if (activeModelMeta.parallel()) {
-            try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-                for (int i = 0; i < totalSubChunks; i++) {
-                    final int subIdx = i;
-                    final Map<String, String> subMap = subChunks.get(i);
-                    final long totalPacingOffset = pacingDelay * i;
-
-                    executor.submit(() -> {
-                        try {
-                            if (totalPacingOffset > 0) {
-                                Thread.sleep(totalPacingOffset);
-                            }
-                        } catch (InterruptedException ie) {
-                            Thread.currentThread().interrupt();
-                        }
-                        Map<String, String> translatedSubMap = translateSubChunkWithRetry(
-                                chunk.chunkId(), subIdx, totalSubChunks, subMap);
-                        mergedResults.putAll(translatedSubMap);
-                    });
-                }
-            }
-        } else {
-            for (int i = 0; i < totalSubChunks; i++) {
-                Map<String, String> subMap = subChunks.get(i);
-                try {
-                    if (pacingDelay * i > 0) {
-                        Thread.sleep(pacingDelay * i);
-                    }
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                }
-                Map<String, String> translatedSubMap = translateSubChunkWithRetry(
-                        chunk.chunkId(), i, totalSubChunks, subMap);
-                mergedResults.putAll(translatedSubMap);
-            }
+        try {
+            Thread.sleep(pacingDelay);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
         }
 
+        Map<String, String> translated = translateWithRetry(chunk.chunkId(), totalTranslations);
         LOGGER.log(System.Logger.Level.INFO, "Lote {0} completado: {1} claves traducidas.",
-                chunk.chunkId(), mergedResults.size());
+                chunk.chunkId(), translated.size());
 
-        return new TranslationResult(chunk.chunkId(), Map.copyOf(mergedResults), Instant.now());
+        return new TranslationResult(chunk.chunkId(), Map.copyOf(translated), Instant.now());
     }
 
-    private Map<String, String> translateSubChunkWithRetry(int parentChunkId, int subIdx, int totalSubChunks, Map<String, String> subMap) {
+    private Map<String, String> translateWithRetry(int chunkId, Map<String, String> translations) {
         long backoffMs = INITIAL_BACKOFF_MS;
 
         for (int intento = 1; intento <= MAX_RETRIES; intento++) {
-            ModelMetadata activeModelMeta = getActiveModelMetadata();
-            String activeModel = activeModelMeta.id();
-            String activeKey = apiKeyPool.next();
-            int activeMaxTokens = activeModelMeta.maxTokens();
+            String activeModel = currentModel.id();
+            int activeMaxTokens = currentModel.maxTokens();
 
             GroqRequest payload = new GroqRequest(
                     activeModel,
                     List.of(
                             new Message("system", "Traduce el JSON de Minecraft de ingl\u00e9s a espa\u00f1ol (es_es). Conserva claves y c\u00f3digos de formato intactos. Responde \u00fanicamente con el JSON."),
-                            new Message("user", buildPrompt(subMap))
+                            new Message("user", buildPrompt(translations))
                     ),
                     0.0,
                     new ResponseFormat("json_object"),
@@ -193,12 +135,12 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
             );
 
             try {
-                LOGGER.log(System.Logger.Level.DEBUG, "Sub-lote {0}/{1} (Lote {2}, Modelo: {3}). Intento {4}/{5}.",
-                        subIdx + 1, totalSubChunks, parentChunkId, activeModel, intento, MAX_RETRIES);
+                LOGGER.log(System.Logger.Level.DEBUG, "Lote {0}, Modelo: {1}. Intento {2}/{3}.",
+                        chunkId, activeModel, intento, MAX_RETRIES);
 
                 GroqResponse response = restClient.post()
                         .uri("/chat/completions")
-                        .header("Authorization", "Bearer " + activeKey)
+                        .header("Authorization", "Bearer " + apiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .body(payload)
                         .retrieve()
@@ -211,13 +153,10 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
                 String rawTextResponse = response.choices().getFirst().message().content();
                 String cleanJson = jsonSanitizer.sanitize(rawTextResponse);
 
-                Map<String, String> translatedMap = objectMapper.readValue(
+                return objectMapper.readValue(
                         cleanJson,
                         new TypeReference<Map<String, String>>() {}
                 );
-
-                apiKeyPool.resetFailures(activeKey);
-                return translatedMap;
             } catch (HttpStatusCodeException ex) {
                 int statusCode = ex.getStatusCode().value();
                 String errorBody = ex.getResponseBodyAsString();
@@ -226,82 +165,34 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
 
                 switch (statusCode) {
                     case 429 -> {
-                        if (errorBody.contains("tokens per day") || errorBody.contains("TPD")) {
-                            LOGGER.log(System.Logger.Level.WARNING, "TPD agotado para el modelo: {0}. Rotando...", activeModel);
-                            rotateModel(activeModel);
-                        } else {
-                            backoffMs = sleepAndCalculateBackoff(backoffMs, "Rate limit temporal (RPM/TPM).");
-                        }
+                        backoffMs = sleepAndCalculateBackoff(backoffMs, "Rate limit (RPM/TPM/TPD).");
                     }
-                    case 401, 403 -> apiKeyPool.markAsInvalid(activeKey);
+                    case 401, 403 -> {
+                        LOGGER.log(System.Logger.Level.WARNING, "Llave de API rechazada (HTTP {0}).", statusCode);
+                    }
                     case 400, 413, 422 -> {
                         if (errorBody.contains("json_validate_failed") || errorBody.contains("max completion tokens")) {
                             backoffMs = sleepAndCalculateBackoff(backoffMs, "Modelo agot\u00f3 tokens de salida (json_validate_failed).");
                         } else {
-                            throw new ChunkFatalException("Error fatal en sub-lote " + (subIdx + 1), parentChunkId, ex);
+                            throw new ChunkFatalException("Error fatal en lote " + chunkId, chunkId, ex);
                         }
                     }
-                    default -> backoffMs = sleepAndCalculateBackoff(backoffMs, "Error HTTP " + statusCode);
+                    default -> {
+                        backoffMs = sleepAndCalculateBackoff(backoffMs, "Error HTTP " + statusCode);
+                    }
                 }
             } catch (Exception e) {
                 backoffMs = sleepAndCalculateBackoff(backoffMs, "Error de red: " + e.getClass().getSimpleName());
             }
         }
 
-        throw new ChunkRetryableException("Se agotaron los reintentos en el sub-lote " + (subIdx + 1), parentChunkId);
+        throw new ChunkRetryableException("Se agotaron los reintentos para el lote " + chunkId, chunkId);
     }
 
-    private ModelMetadata getActiveModelMetadata() {
-        int idx = activeModelIndex.get();
-        if (idx >= modelCascade.size()) {
-            throw new SessionFatalException("Todos los modelos de la cascada de Groq agotaron su cuota TPD diaria.");
-        }
-        return modelCascade.get(idx);
-    }
-
-    private String getActiveModel() {
-        return getActiveModelMetadata().id();
-    }
-
-    private void rotateModel(String modelThatFailed) {
-        synchronized (activeModelIndex) {
-            int currentIdx = activeModelIndex.get();
-            if (currentIdx < modelCascade.size() && modelCascade.get(currentIdx).id().equals(modelThatFailed)) {
-                int nextIdx = currentIdx + 1;
-                activeModelIndex.set(nextIdx);
-                if (nextIdx < modelCascade.size()) {
-                    ModelMetadata nextMeta = modelCascade.get(nextIdx);
-                    long nextPacing = calculatePacingDelay(nextMeta, totalKeysConfigured);
-                    LOGGER.log(System.Logger.Level.WARNING, "==================================================================");
-                    LOGGER.log(System.Logger.Level.WARNING, "Rotando modelo de Groq hacia: {0} ({1} RPM, {2} claves/sub-lote, pausa {3}ms)", nextMeta.id(), nextMeta.rpmLimit(), nextMeta.subChunkSize(), nextPacing);
-                    LOGGER.log(System.Logger.Level.WARNING, "==================================================================");
-                } else {
-                    LOGGER.log(System.Logger.Level.ERROR, "Todos los modelos de Groq agotaron su cuota diaria.");
-                }
-            }
-        }
-    }
-
-    private long calculatePacingDelay(ModelMetadata meta, int totalKeys) {
-        long rpmDelay = (60000L / meta.rpmLimit()) / totalKeys;
-        long tpmDelay = (ESTIMATED_TOKENS_PER_KEY * meta.subChunkSize() * 60000L) / meta.tpmLimit();
+    private long calculatePacingDelay(ModelMetadata meta, int requestKeyCount) {
+        long rpmDelay = 60000L / meta.rpmLimit();
+        long tpmDelay = (ESTIMATED_TOKENS_PER_KEY * requestKeyCount * 60000L) / meta.tpmLimit();
         return Math.max(rpmDelay, tpmDelay);
-    }
-
-    private List<Map<String, String>> splitMap(Map<String, String> originalMap, int size) {
-        List<Map<String, String>> list = new ArrayList<>();
-        Map<String, String> current = new LinkedHashMap<>();
-        for (Map.Entry<String, String> entry : originalMap.entrySet()) {
-            current.put(entry.getKey(), entry.getValue());
-            if (current.size() >= size) {
-                list.add(current);
-                current = new LinkedHashMap<>();
-            }
-        }
-        if (!current.isEmpty()) {
-            list.add(current);
-        }
-        return list;
     }
 
     private long sleepAndCalculateBackoff(long currentBackoffMs, String reason) {
@@ -323,7 +214,7 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
         }
     }
 
-    private record ModelMetadata(String id, int rpmLimit, int subChunkSize, int maxTokens, boolean parallel, int tpmLimit) {}
+    private record ModelMetadata(String id, int rpmLimit, int maxTokens, int tpmLimit) {}
     private record GroqRequest(String model, List<Message> messages, double temperature, ResponseFormat response_format, int max_tokens) {}
     private record Message(String role, String content) {}
     private record ResponseFormat(String type) {}
