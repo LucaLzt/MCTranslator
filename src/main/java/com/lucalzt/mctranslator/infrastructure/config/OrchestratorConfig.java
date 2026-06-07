@@ -8,7 +8,6 @@ import com.lucalzt.mctranslator.infrastructure.outbound.persistence.JsonCheckpoi
 import com.lucalzt.mctranslator.ports.inbound.TranslateModpackUseCase;
 import com.lucalzt.mctranslator.ports.outbound.ModExtractorPort;
 import com.lucalzt.mctranslator.ports.outbound.ResourcePackGeneratorPort;
-import com.lucalzt.mctranslator.ports.outbound.TranslationEnginePort;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,42 +22,41 @@ public class OrchestratorConfig {
 
     private static final System.Logger LOGGER = System.getLogger(OrchestratorConfig.class.getName());
 
-    @Value("${mctranslator.chunk-size:25}")
-    private int maxChunkSize;
-
     /**
      * Construye y registra el caso de uso TranslateModpackUseCase.
-     * Une los adaptadores de salida con los servicios utilitarios puros del dominio en la orquestación.
+     * Une los adaptadores de salida con el registro de motores en la orquestación.
      *
      * @param modExtractor El extractor de archivos de idiomas de mods.
-     * @param translationEngine El motor activo de traducción de IA (Ollama / Groq).
      * @param resourcePackGenerator El inyector de Resource Packs.
      * @param checkpointRepository El repositorio físico de checkpoints.
+     * @param engineRegistry El registro dinámico de motores de traducción.
      * @return El Bean activo del orquestador del pipeline.
      */
     @Bean
     public TranslateModpackUseCase translateModpackUseCase(
             ModExtractorPort modExtractor,
-            TranslationEnginePort translationEngine,
             ResourcePackGeneratorPort resourcePackGenerator,
-            JsonCheckpointRepositoryAdapter checkpointRepository
+            JsonCheckpointRepositoryAdapter checkpointRepository,
+            EngineRegistry engineRegistry,
+            @Value("${mctranslator.engine:ollama}") String defaultEngine,
+            @Value("${mctranslator.chunk-size:50}") int defaultChunkSize
     ) {
-        LOGGER.log(System.Logger.Level.INFO, "Cableando e inicializando el caso de uso del dominio: TranslationOrchestrator con un tamaño de lote de {} claves.", maxChunkSize);
+        LOGGER.log(System.Logger.Level.INFO, "Cableando e inicializando TranslationOrchestrator con engine por defecto '{}' y lote de {} claves.", defaultEngine, defaultChunkSize);
 
-        // Instancio manualmente los servicios utilitarios de dominio
         ChunkingService chunkingService = new ChunkingService();
         CheckpointFilter checkpointFilter = new CheckpointFilter();
         TranslationResultValidator validator = new TranslationResultValidator();
 
         return new TranslationOrchestrator(
                 modExtractor,
-                translationEngine,
                 resourcePackGenerator,
                 checkpointRepository,
                 chunkingService,
                 checkpointFilter,
                 validator,
-                maxChunkSize
+                engineRegistry,
+                defaultEngine,
+                defaultChunkSize
         );
     }
 }
