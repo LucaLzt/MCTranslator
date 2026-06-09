@@ -39,7 +39,10 @@ public class GlossaryAwareTranslator implements TranslationEnginePort {
         TranslationResult result = delegate.translate(enrichedChunk);
 
         saveNewTerms(chunk.translationsToTranslate(), result.translatedTranslations());
-        return result;
+
+        Map<String, String> cleanResult = new HashMap<>(result.translatedTranslations());
+        cleanResult.remove(GLOSSARY_CONTEXT_KEY);
+        return new TranslationResult(result.chunkId(), cleanResult, result.timestamp());
     }
 
     /**

@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -131,9 +132,12 @@ public class OllamaRestClientAdapter implements TranslationEnginePort {
 
     private String buildPrompt(Map<String, String> sourceTranslations) {
         try {
-            String jsonInputString = objectMapper.writeValueAsString(sourceTranslations);
+            Map<String, String> mutable = new HashMap<>(sourceTranslations);
+            String glossaryContext = mutable.remove("__glossary_context__");
+            String jsonInputString = objectMapper.writeValueAsString(mutable);
 
-            return """
+            StringBuilder prompt = new StringBuilder();
+            prompt.append("""
                    Eres un traductor experto en localización de mods de Minecraft, especializado en modpacks de rol (RPG).
                    Tu única tarea es traducir mapas JSON de idiomas del inglés al español de España (es_es).
 
@@ -144,9 +148,23 @@ public class OllamaRestClientAdapter implements TranslationEnginePort {
                    4. PROTECCIÓN DE NOMBRES DE MODS: NO traduzcas bajo ningún concepto los nombres propios de los mods (por ejemplo: 'Bosses of Mass Destruction', 'Simply Swords', 'BetterEnd', 'Mythic Upgrades', 'Archon', etc.). Deben permanecer en inglés para no romper documentación ni referencias externas.
                    5. PROTECCIÓN DE METADATOS: Si detectas que el valor corresponde a un menú técnico de configuración o metadatos de ModMenu, tradúcelo de forma híbrida conservando el nombre del mod original (ej: 'Bosses of Mass Destruction Config' → 'Configuración de Bosses of Mass Destruction').
                    6. Debes responder estrictamente con un objeto JSON plano. No incluyas explicaciones, introducciones, saludos ni bloques de código Markdown.
+                   """);
 
-                   OBJETO JSON A TRADUCIR:
-                   """ + jsonInputString;
+            if (glossaryContext != null && !glossaryContext.isBlank()) {
+                prompt.append(System.lineSeparator()).append(System.lineSeparator())
+                      .append("IMPORTANTE — CONTEXTO DE GLOSARIO (traducciones previas que DEBES respetar para mantener consistencia):")
+                      .append(System.lineSeparator())
+                      .append(glossaryContext)
+                      .append(System.lineSeparator())
+                      .append("Usa estas traducciones como referencia obligatoria. Si un término aparece aquí, NO lo traduzcas de otra forma.");
+            }
+
+            prompt.append(System.lineSeparator()).append(System.lineSeparator())
+                  .append("OBJETO JSON A TRADUCIR:")
+                  .append(System.lineSeparator())
+                  .append(jsonInputString);
+
+            return prompt.toString();
 
         } catch (Exception e) {
             LOGGER.log(System.Logger.Level.ERROR, "Error al serializar el chunk a JSON para el Prompt", e);

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.lucalzt.mctranslator.domain.model.GlossaryEntry;
 import com.lucalzt.mctranslator.infrastructure.outbound.glossary.JsonGlossaryAdapter;
 import com.lucalzt.mctranslator.ports.outbound.GlossaryPort;
+import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
@@ -48,7 +49,8 @@ public class GlossaryCommand implements Callable<Integer> {
             names = "--modpack",
             description = "Ruta del modpack (usa el directorio actual si no se especifica).",
             required = false,
-            paramLabel = "<RUTA>"
+            paramLabel = "<RUTA>",
+            scope = CommandLine.ScopeType.INHERIT
     )
     private Path modpackPath;
 
