@@ -584,4 +584,137 @@ class TranslationOrchestratorTest {
             inOrder.verify(modExtractor).extract(jarZ);
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Quest processing
+    // -------------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("Quest processing")
+    class QuestProcessing {
+
+        private Path questLangDir;
+
+        @BeforeEach
+        void setUpQuests() throws IOException {
+            questLangDir = Files.createDirectories(tempDir.resolve("config/ftbquests/quests/lang"));
+        }
+
+        @Test
+        @DisplayName("skips quests when detector returns NONE")
+        void skipsQuests_whenDetectorReturnsNone() throws IOException {
+            when(questFileDetector.detect(any())).thenReturn(QuestSystemType.NONE);
+
+            orchestrator.execute(tempDir.toString());
+
+            verifyNoInteractions(questExtractor, questWriter);
+        }
+
+        @Test
+        @DisplayName("skips quests when extracted data has no entries")
+        void skipsQuests_whenQuestDataIsEmpty() throws IOException {
+            when(questFileDetector.detect(any())).thenReturn(QuestSystemType.FTB_QUESTS_MODERN);
+            when(questExtractor.extract(any())).thenReturn(new QuestData(QuestSystemType.FTB_QUESTS_MODERN, Map.of(), new byte[0]));
+
+            orchestrator.execute(tempDir.toString());
+
+            verify(questExtractor).extract(any());
+            verifyNoInteractions(questWriter);
+        }
+
+        @Test
+        @DisplayName("skips translation when all keys are checkpointed")
+        void skipsTranslation_whenAllKeysCheckpointed() throws IOException {
+            when(questFileDetector.detect(any())).thenReturn(QuestSystemType.FTB_QUESTS_MODERN);
+            when(questExtractor.extract(any())).thenReturn(new QuestData(
+                    QuestSystemType.FTB_QUESTS_MODERN, Map.of("key.1", "Hello"), new byte[0]));
+            when(checkpointRepository.load("__quests__")).thenReturn(Set.of("key.1"));
+
+            orchestrator.execute(tempDir.toString());
+
+            verify(questExtractor).extract(any());
+            verify(translationEngine, never()).translate(any());
+            verifyNoInteractions(questWriter);
+        }
+
+        @Test
+        @DisplayName("translates only pending keys and writes result")
+        void translatesPendingKeysAndWritesResult() throws IOException {
+            Map<String, String> allEntries = new LinkedHashMap<>();
+            allEntries.put("key.1", "Hello One");
+            allEntries.put("key.2", "Hello Two");
+
+            when(questFileDetector.detect(any())).thenReturn(QuestSystemType.FTB_QUESTS_MODERN);
+            when(questExtractor.extract(any())).thenReturn(new QuestData(
+                    QuestSystemType.FTB_QUESTS_MODERN, allEntries, new byte[0]));
+            when(checkpointRepository.load("__quests__")).thenReturn(Set.of("key.1"));
+
+            when(translationEngine.translate(any())).thenAnswer(invocation -> {
+                TranslationChunk chunk = invocation.getArgument(0);
+                Map<String, String> translated = new LinkedHashMap<>();
+                chunk.translationsToTranslate().forEach((k, v) -> translated.put(k, v + "_es"));
+                return new TranslationResult(chunk.chunkId(), translated, Instant.now());
+            });
+
+            orchestrator.execute(tempDir.toString());
+
+            verify(translationEngine).translate(argThat(c -> c.size() == 1));
+            verify(questWriter).write(any(), any(), argThat(m -> m.size() == 1 && m.containsKey("key.2")));
+        }
+
+        @Test
+        @DisplayName("writes incrementally after each chunk")
+        void writesIncrementallyAfterEachChunk() throws IOException {
+            Map<String, String> allEntries = new LinkedHashMap<>();
+            allEntries.put("key.1", "Hello One");
+            allEntries.put("key.2", "Hello Two");
+            allEntries.put("key.3", "Hello Three");
+
+            when(questFileDetector.detect(any())).thenReturn(QuestSystemType.FTB_QUESTS_MODERN);
+            when(questExtractor.extract(any())).thenReturn(new QuestData(
+                    QuestSystemType.FTB_QUESTS_MODERN, allEntries, new byte[0]));
+            when(checkpointRepository.load("__quests__")).thenReturn(Set.of());
+
+            when(translationEngine.translate(any())).thenAnswer(invocation -> {
+                TranslationChunk chunk = invocation.getArgument(0);
+                Map<String, String> translated = new LinkedHashMap<>();
+                chunk.translationsToTranslate().forEach((k, v) -> translated.put(k, v + "_es"));
+                return new TranslationResult(chunk.chunkId(), translated, Instant.now());
+            });
+
+            orchestrator.execute(tempDir.toString());
+
+            verify(translationEngine, times(2)).translate(any());
+            verify(questWriter, times(2)).write(any(), any(), any());
+            verify(checkpointRepository, times(2)).save(eq("__quests__"), any());
+        }
+
+        @Test
+        @DisplayName("continues to next chunk when translation fails")
+        void continuesToNextChunk_whenTranslationFails() throws IOException {
+            Map<String, String> allEntries = new LinkedHashMap<>();
+            allEntries.put("key.1", "Hello One");
+            allEntries.put("key.2", "Hello Two");
+            allEntries.put("key.3", "Hello Three");
+
+            when(questFileDetector.detect(any())).thenReturn(QuestSystemType.FTB_QUESTS_MODERN);
+            when(questExtractor.extract(any())).thenReturn(new QuestData(
+                    QuestSystemType.FTB_QUESTS_MODERN, allEntries, new byte[0]));
+            when(checkpointRepository.load("__quests__")).thenReturn(Set.of());
+
+            when(translationEngine.translate(any()))
+                    .thenThrow(new RuntimeException("API error"))
+                    .thenAnswer(invocation -> {
+                        TranslationChunk chunk = invocation.getArgument(0);
+                        Map<String, String> translated = new LinkedHashMap<>();
+                        chunk.translationsToTranslate().forEach((k, v) -> translated.put(k, v + "_es"));
+                        return new TranslationResult(chunk.chunkId(), translated, Instant.now());
+                    });
+
+            assertDoesNotThrow(() -> orchestrator.execute(tempDir.toString()));
+
+            verify(translationEngine, times(2)).translate(any());
+            verify(questWriter, times(1)).write(any(), any(), any());
+        }
+    }
 }

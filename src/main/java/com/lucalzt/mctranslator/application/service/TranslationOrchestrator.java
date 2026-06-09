@@ -191,7 +191,15 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
         LOGGER.log(System.Logger.Level.INFO, "Sistema de misiones detectado: {0}", systemType);
 
         QuestData questData = questExtractor.extract(modpackPath);
-        if (questData.systemType() == QuestSystemType.NONE || questData.entries().isEmpty()) {
+        if (questData.systemType() == QuestSystemType.NONE) {
+            if (systemType != QuestSystemType.NONE) {
+                LOGGER.log(System.Logger.Level.WARNING, "Sistema '{0}' detectado pero no hay un adaptador de extracción implementado. Omitiendo.", systemType);
+            } else {
+                LOGGER.log(System.Logger.Level.INFO, "No se encontraron archivos de misiones para traducir. Omitiendo.");
+            }
+            return;
+        }
+        if (questData.entries().isEmpty()) {
             LOGGER.log(System.Logger.Level.INFO, "No se encontraron textos de misiones para traducir. Omitiendo.");
             return;
         }
@@ -237,12 +245,12 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
                 progressKeys.addAll(allTranslations.keySet());
                 checkpointRepository.save(checkpointId, progressKeys);
 
+                questWriter.write(modpackPath, questData, allTranslations);
+
             } catch (Exception e) {
                 LOGGER.log(System.Logger.Level.WARNING, "Error al traducir lote de misiones {0}. Continuando.", chunk.chunkId() + 1);
             }
         }
-
-        questWriter.write(modpackPath, questData, allTranslations);
 
         LOGGER.log(System.Logger.Level.INFO, "Traducción de misiones completada: {0} textos traducidos.", allTranslations.size());
     }
