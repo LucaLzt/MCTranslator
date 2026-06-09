@@ -3,9 +3,15 @@ package com.lucalzt.mctranslator.infrastructure.config;
 import com.lucalzt.mctranslator.application.service.TranslationOrchestrator;
 import com.lucalzt.mctranslator.domain.service.CheckpointFilter;
 import com.lucalzt.mctranslator.domain.service.ChunkingService;
+import com.lucalzt.mctranslator.domain.service.QuestFileDetector;
+import com.lucalzt.mctranslator.domain.service.SnbtSanitizer;
 import com.lucalzt.mctranslator.domain.service.TranslationResultValidator;
 import com.lucalzt.mctranslator.infrastructure.outbound.persistence.JsonCheckpointRepositoryAdapter;
+import com.lucalzt.mctranslator.infrastructure.outbound.quest.FtbQuestsModernAdapter;
+import com.lucalzt.mctranslator.infrastructure.outbound.quest.QuestFileDetectorImpl;
 import com.lucalzt.mctranslator.ports.outbound.ModExtractorPort;
+import com.lucalzt.mctranslator.ports.outbound.QuestExtractorPort;
+import com.lucalzt.mctranslator.ports.outbound.QuestWriterPort;
 import com.lucalzt.mctranslator.ports.outbound.ResourcePackGeneratorPort;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -46,6 +52,10 @@ public class OrchestratorConfig {
         CheckpointFilter checkpointFilter = new CheckpointFilter();
         TranslationResultValidator validator = new TranslationResultValidator();
 
+        SnbtSanitizer snbtSanitizer = new SnbtSanitizer();
+        FtbQuestsModernAdapter ftbQuestsAdapter = new FtbQuestsModernAdapter(snbtSanitizer);
+        QuestFileDetector questFileDetector = new QuestFileDetectorImpl();
+
         return new TranslationOrchestrator(
                 modExtractor,
                 resourcePackGenerator,
@@ -55,7 +65,10 @@ public class OrchestratorConfig {
                 validator,
                 engineRegistry,
                 defaultEngine,
-                defaultChunkSize
+                defaultChunkSize,
+                questFileDetector,
+                ftbQuestsAdapter,
+                ftbQuestsAdapter
         );
     }
 }
