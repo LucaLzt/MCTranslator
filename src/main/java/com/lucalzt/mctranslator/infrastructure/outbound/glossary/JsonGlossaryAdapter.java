@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Adaptador de {@link GlossaryPort} con persistencia en archivo JSON.
@@ -98,6 +99,13 @@ public class JsonGlossaryAdapter implements GlossaryPort {
             }
         }
         return Collections.unmodifiableMap(result);
+    }
+
+    @Override
+    public List<GlossaryEntry> findAll() {
+        return cache.values().stream()
+                .sorted(Comparator.comparing(GlossaryEntry::termEn, String.CASE_INSENSITIVE_ORDER))
+                .collect(Collectors.toUnmodifiableList());
     }
 
     public Map<String, GlossaryEntry> allEntries() {

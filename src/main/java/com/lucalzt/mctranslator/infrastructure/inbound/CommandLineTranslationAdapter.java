@@ -1,6 +1,7 @@
 package com.lucalzt.mctranslator.infrastructure.inbound;
 
 import com.lucalzt.mctranslator.infrastructure.config.EngineRegistry;
+import com.lucalzt.mctranslator.infrastructure.inbound.glossary.GlossaryCommand;
 import com.lucalzt.mctranslator.infrastructure.outbound.ai.GroqRestClientAdapter;
 import com.lucalzt.mctranslator.infrastructure.outbound.ai.OllamaRestClientAdapter;
 import com.lucalzt.mctranslator.infrastructure.outbound.persistence.JsonCheckpointRepositoryAdapter;
@@ -64,7 +65,9 @@ public class CommandLineTranslationAdapter implements CommandLineRunner, Callabl
 
     @Override
     public void run(String... args) {
-        int exitCode = new CommandLine(this).execute(args);
+        int exitCode = new CommandLine(this)
+                .addSubcommand(new GlossaryCommand())
+                .execute(args);
         if (exitCode != 0) {
             System.exit(exitCode);
         }

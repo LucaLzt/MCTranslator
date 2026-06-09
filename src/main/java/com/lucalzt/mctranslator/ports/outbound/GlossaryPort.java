@@ -1,5 +1,7 @@
 package com.lucalzt.mctranslator.ports.outbound;
 
+import com.lucalzt.mctranslator.domain.model.GlossaryEntry;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -41,4 +43,6 @@ public interface GlossaryPort {
      *         (término → traducción). Nunca es {@code null}.
      */
     Map<String, String> findRelevantTerms(Set<String> candidates);
+
+    List<GlossaryEntry> findAll();
 }

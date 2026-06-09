@@ -1,12 +1,17 @@
 package com.lucalzt.mctranslator.infrastructure.outbound.glossary;
 
+import com.lucalzt.mctranslator.domain.model.GlossaryEntry;
 import com.lucalzt.mctranslator.ports.outbound.GlossaryPort;
 
+import java.time.Instant;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Adaptador de {@link GlossaryPort} exclusivamente en memoria, sin persistencia.
@@ -48,6 +53,14 @@ public class InMemoryGlossaryAdapter implements GlossaryPort {
             }
         }
         return Collections.unmodifiableMap(result);
+    }
+
+    @Override
+    public List<GlossaryEntry> findAll() {
+        return store.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey(String.CASE_INSENSITIVE_ORDER))
+                .map(e -> new GlossaryEntry(e.getKey(), e.getValue(), "in-memory", 1, Instant.EPOCH))
+                .collect(Collectors.toUnmodifiableList());
     }
 
     public Map<String, String> allEntries() {
