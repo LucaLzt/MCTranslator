@@ -5,11 +5,8 @@ import com.lucalzt.mctranslator.domain.service.CheckpointFilter;
 import com.lucalzt.mctranslator.domain.service.ChunkingService;
 import com.lucalzt.mctranslator.domain.service.TranslationResultValidator;
 import com.lucalzt.mctranslator.infrastructure.outbound.persistence.JsonCheckpointRepositoryAdapter;
-import com.lucalzt.mctranslator.ports.inbound.TranslateModpackUseCase;
-import com.lucalzt.mctranslator.ports.outbound.GlossaryPort;
 import com.lucalzt.mctranslator.ports.outbound.ModExtractorPort;
 import com.lucalzt.mctranslator.ports.outbound.ResourcePackGeneratorPort;
-import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -35,12 +32,11 @@ public class OrchestratorConfig {
      * @return El Bean activo del orquestador del pipeline.
      */
     @Bean
-    public TranslateModpackUseCase translateModpackUseCase(
+    public TranslationOrchestrator translationOrchestrator(
             ModExtractorPort modExtractor,
             ResourcePackGeneratorPort resourcePackGenerator,
             JsonCheckpointRepositoryAdapter checkpointRepository,
             EngineRegistry engineRegistry,
-            Optional<GlossaryPort> glossaryPort,
             @Value("${mctranslator.engine:ollama}") String defaultEngine,
             @Value("${mctranslator.chunk-size:50}") int defaultChunkSize
     ) {
@@ -58,7 +54,6 @@ public class OrchestratorConfig {
                 checkpointFilter,
                 validator,
                 engineRegistry,
-                glossaryPort.orElse(null),
                 defaultEngine,
                 defaultChunkSize
         );

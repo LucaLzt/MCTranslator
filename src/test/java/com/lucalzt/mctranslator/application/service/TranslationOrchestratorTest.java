@@ -69,7 +69,7 @@ class TranslationOrchestratorTest {
         orchestrator = new TranslationOrchestrator(
                 modExtractor, resourcePackGenerator, checkpointRepository,
                 chunkingService, checkpointFilter, validator,
-                engineRegistry, null, "test", 2
+                engineRegistry, "test", 2
         );
     }
 
@@ -118,70 +118,70 @@ class TranslationOrchestratorTest {
         @DisplayName("throws NullPointerException when ModExtractorPort is null")
         void throwsNullPointerException_whenModExtractorIsNull() {
             assertThrows(NullPointerException.class, () -> new TranslationOrchestrator(
-                    null, mock(), mock(), mock(), mock(), mock(), mockEngineRegistry(), null, "test", 2));
+                    null, mock(), mock(), mock(), mock(), mock(), mockEngineRegistry(), "test", 2));
         }
 
         @Test
         @DisplayName("throws NullPointerException when ResourcePackGeneratorPort is null")
         void throwsNullPointerException_whenResourcePackGeneratorIsNull() {
             assertThrows(NullPointerException.class, () -> new TranslationOrchestrator(
-                    mock(), null, mock(), mock(), mock(), mock(), mockEngineRegistry(), null, "test", 2));
+                    mock(), null, mock(), mock(), mock(), mock(), mockEngineRegistry(), "test", 2));
         }
 
         @Test
         @DisplayName("throws NullPointerException when CheckpointRepositoryPort is null")
         void throwsNullPointerException_whenCheckpointRepositoryIsNull() {
             assertThrows(NullPointerException.class, () -> new TranslationOrchestrator(
-                    mock(), mock(), null, mock(), mock(), mock(), mockEngineRegistry(), null, "test", 2));
+                    mock(), mock(), null, mock(), mock(), mock(), mockEngineRegistry(), "test", 2));
         }
 
         @Test
         @DisplayName("throws NullPointerException when ChunkingService is null")
         void throwsNullPointerException_whenChunkingServiceIsNull() {
             assertThrows(NullPointerException.class, () -> new TranslationOrchestrator(
-                    mock(), mock(), mock(), null, mock(), mock(), mockEngineRegistry(), null, "test", 2));
+                    mock(), mock(), mock(), null, mock(), mock(), mockEngineRegistry(), "test", 2));
         }
 
         @Test
         @DisplayName("throws NullPointerException when CheckpointFilter is null")
         void throwsNullPointerException_whenCheckpointFilterIsNull() {
             assertThrows(NullPointerException.class, () -> new TranslationOrchestrator(
-                    mock(), mock(), mock(), mock(), null, mock(), mockEngineRegistry(), null, "test", 2));
+                    mock(), mock(), mock(), mock(), null, mock(), mockEngineRegistry(), "test", 2));
         }
 
         @Test
         @DisplayName("throws NullPointerException when TranslationResultValidator is null")
         void throwsNullPointerException_whenValidatorIsNull() {
             assertThrows(NullPointerException.class, () -> new TranslationOrchestrator(
-                    mock(), mock(), mock(), mock(), mock(), null, mockEngineRegistry(), null, "test", 2));
+                    mock(), mock(), mock(), mock(), mock(), null, mockEngineRegistry(), "test", 2));
         }
 
         @Test
         @DisplayName("throws NullPointerException when EngineRegistry is null")
         void throwsNullPointerException_whenEngineRegistryIsNull() {
             assertThrows(NullPointerException.class, () -> new TranslationOrchestrator(
-                    mock(), mock(), mock(), mock(), mock(), mock(), null, null, "test", 2));
+                    mock(), mock(), mock(), mock(), mock(), mock(), null, "test", 2));
         }
 
         @Test
         @DisplayName("throws NullPointerException when defaultEngine is null")
         void throwsNullPointerException_whenDefaultEngineIsNull() {
             assertThrows(NullPointerException.class, () -> new TranslationOrchestrator(
-                    mock(), mock(), mock(), mock(), mock(), mock(), mockEngineRegistry(), null, null, 2));
+                    mock(), mock(), mock(), mock(), mock(), mock(), mockEngineRegistry(), null, 2));
         }
 
         @Test
         @DisplayName("throws IllegalArgumentException when defaultChunkSize is 0")
         void throwsIllegalArgumentException_whenDefaultChunkSizeIsZero() {
             assertThrows(IllegalArgumentException.class, () -> new TranslationOrchestrator(
-                    mock(), mock(), mock(), mock(), mock(), mock(), mockEngineRegistry(), null, "test", 0));
+                    mock(), mock(), mock(), mock(), mock(), mock(), mockEngineRegistry(), "test", 0));
         }
 
         @Test
         @DisplayName("throws IllegalArgumentException when defaultChunkSize is negative")
         void throwsIllegalArgumentException_whenDefaultChunkSizeIsNegative() {
             assertThrows(IllegalArgumentException.class, () -> new TranslationOrchestrator(
-                    mock(), mock(), mock(), mock(), mock(), mock(), mockEngineRegistry(), null, "test", -1));
+                    mock(), mock(), mock(), mock(), mock(), mock(), mockEngineRegistry(), "test", -1));
         }
     }
 

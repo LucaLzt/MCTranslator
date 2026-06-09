@@ -1,5 +1,7 @@
 package com.lucalzt.mctranslator.application.service;
 
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.lucalzt.mctranslator.domain.exception.SessionFatalException;
 import com.lucalzt.mctranslator.domain.model.ModLanguageFile;
 import com.lucalzt.mctranslator.domain.model.ModpackPathResolver;
@@ -10,6 +12,7 @@ import com.lucalzt.mctranslator.domain.service.ChunkingService;
 import com.lucalzt.mctranslator.domain.service.TranslationResultValidator;
 import com.lucalzt.mctranslator.infrastructure.config.EngineRegistry;
 import com.lucalzt.mctranslator.infrastructure.inbound.TranslationConfigDTO;
+import com.lucalzt.mctranslator.infrastructure.outbound.glossary.JsonGlossaryAdapter;
 import com.lucalzt.mctranslator.ports.inbound.TranslateModpackUseCase;
 import com.lucalzt.mctranslator.ports.outbound.CheckpointRepositoryPort;
 import com.lucalzt.mctranslator.ports.outbound.GlossaryPort;
@@ -42,8 +45,7 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
     private final TranslationResultValidator validator;
 
     private final EngineRegistry engineRegistry;
-    private final GlossaryPort glossaryPort;
-    private final GlossaryContextBuilder glossaryContextBuilder;
+    private GlossaryPort glossaryAdapter;
     private final String defaultEngine;
     private final int defaultChunkSize;
 
@@ -58,7 +60,6 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
             CheckpointFilter checkpointFilter,
             TranslationResultValidator validator,
             EngineRegistry engineRegistry,
-            GlossaryPort glossaryPort,
             String defaultEngine,
             int defaultChunkSize
     ) {
@@ -69,13 +70,24 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
         this.checkpointFilter = Objects.requireNonNull(checkpointFilter, "El servicio CheckpointFilter no puede ser nulo");
         this.validator = Objects.requireNonNull(validator, "El validador de resultados no puede ser nulo");
         this.engineRegistry = Objects.requireNonNull(engineRegistry, "El registro de motores EngineRegistry no puede ser nulo");
-        this.glossaryPort = glossaryPort;
-        this.glossaryContextBuilder = new GlossaryContextBuilder();
         this.defaultEngine = Objects.requireNonNull(defaultEngine, "El nombre del motor por defecto no puede ser nulo");
         if (defaultChunkSize <= 0) {
             throw new IllegalArgumentException("El tamaño de lote por defecto debe ser mayor a cero");
         }
         this.defaultChunkSize = defaultChunkSize;
+    }
+
+    /**
+     * Configura la ruta del modpack para habilitar el glosario persistente.
+     * Crea internamente un {@link JsonGlossaryAdapter} que lee/escribe
+     * {@code .mctranslator/glossary.json} dentro del directorio del modpack.
+     * Si no se llama a este método, el pipeline traduce sin glosario.
+     */
+    public void setGlossaryPath(Path modpackPath) {
+        this.glossaryAdapter = new JsonGlossaryAdapter(
+                new JsonMapper().registerModule(new JavaTimeModule()),
+                modpackPath
+        );
     }
 
     @Override
@@ -103,8 +115,8 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
             throw new IllegalStateException("No hay un motor de traducción activo registrado en el EngineRegistry");
         }
 
-        if (glossaryPort != null) {
-            activeEngine = new GlossaryAwareTranslator(activeEngine, glossaryPort, glossaryContextBuilder);
+        if (glossaryAdapter != null) {
+            activeEngine = new GlossaryAwareTranslator(activeEngine, glossaryAdapter, new GlossaryContextBuilder());
             LOGGER.log(System.Logger.Level.INFO, "Glosario persistente activo - el motor de traducción está envuelto en GlossaryAwareTranslator.");
         }
 
