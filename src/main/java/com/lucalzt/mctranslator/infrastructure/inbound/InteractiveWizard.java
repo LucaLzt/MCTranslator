@@ -72,7 +72,8 @@ public class InteractiveWizard {
             return new TranslationConfigDTO(
                     modpackPath, engine, chunkSize,
                     ollamaUrl, ollamaModel, groqUrl, groqModel, groqKeys,
-                    null, null, null
+                    null, null, null,
+                    null, null
             );
         }
     }

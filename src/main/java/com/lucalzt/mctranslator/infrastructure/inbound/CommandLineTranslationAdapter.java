@@ -46,6 +46,20 @@ public class CommandLineTranslationAdapter implements CommandLineRunner, Callabl
     )
     private boolean forceWizard;
 
+    @Option(
+            names = "--quests-only",
+            description = "Traducir solo las misiones (quests), omitiendo mods.",
+            required = false
+    )
+    private boolean questsOnly;
+
+    @Option(
+            names = "--mods-only",
+            description = "Traducir solo los mods, omitiendo misiones (quests).",
+            required = false
+    )
+    private boolean modsOnly;
+
     private final TranslationOrchestrator translationOrchestrator;
     private final JsonCheckpointRepositoryAdapter checkpointRepository;
     private final InteractiveWizard wizard;
@@ -82,6 +96,11 @@ public class CommandLineTranslationAdapter implements CommandLineRunner, Callabl
     @Override
     public Integer call() {
         try {
+            if (questsOnly && modsOnly) {
+                LOGGER.log(System.Logger.Level.ERROR, "Las opciones --quests-only y --mods-only no pueden usarse juntas.");
+                return 2;
+            }
+
             if (modpackPath == null || forceWizard) {
                 TranslationConfigDTO cfg = wizard.promptUser();
 
@@ -125,9 +144,14 @@ public class CommandLineTranslationAdapter implements CommandLineRunner, Callabl
                 LOGGER.log(System.Logger.Level.INFO, "Repositorio de checkpoints enlazado exitosamente al directorio del modpack.");
 
                 translationOrchestrator.setGlossaryPath(absolutePath);
-                LOGGER.log(System.Logger.Level.INFO, "Glosario persistente enlazado al directorio del modpack.");
 
-                translationOrchestrator.execute(absolutePath.toString());
+                TranslationConfigDTO cfg = new TranslationConfigDTO(
+                        absolutePath.toString(), null, null,
+                        null, null, null, null, null,
+                        null, null, null,
+                        questsOnly ? true : null, modsOnly ? true : null
+                );
+                translationOrchestrator.execute(absolutePath.toString(), cfg);
             }
 
             LOGGER.log(System.Logger.Level.INFO, "==================================================================");

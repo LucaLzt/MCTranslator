@@ -11,5 +11,7 @@ public record TranslationConfigDTO(
     String groqKeys,
     Integer groqRpm,
     Integer groqMaxTokens,
-    Integer groqTpm
+    Integer groqTpm,
+    Boolean questsOnly,
+    Boolean modsOnly
 ) {}
