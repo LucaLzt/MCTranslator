@@ -37,12 +37,12 @@ public class InteractiveWizard {
             System.out.println("============================================");
             System.out.println();
 
-            String modpackPath = readRequired(scanner, "\uD83D\uDCC1 Ruta del modpack: ");
+            String modpackPath = readRequired(scanner, "Ruta del modpack: ");
 
-            String engine = readWithDefault(scanner, "\uD83E\uDD16 Motor (ollama/groq)", defaultEngine);
+            String engine = readWithDefault(scanner, "Motor (ollama/groq)", defaultEngine);
             while (!"ollama".equalsIgnoreCase(engine) && !"groq".equalsIgnoreCase(engine)) {
-                System.out.println("  \u274C Motor inv\u00e1lido. Elige 'ollama' o 'groq'.");
-                engine = readWithDefault(scanner, "\uD83E\uDD16 Motor (ollama/groq)", defaultEngine);
+                System.out.println("  Motor inválido. Elige 'ollama' o 'groq'.");
+                engine = readWithDefault(scanner, "Motor (ollama/groq)", defaultEngine);
             }
             engine = engine.toLowerCase();
 
@@ -53,21 +53,21 @@ public class InteractiveWizard {
             String groqKeys = null;
 
             if ("ollama".equals(engine)) {
-                String url = readWithDefault(scanner, "\uD83C\uDF10 URL de Ollama", defaultOllamaUrl);
+                String url = readWithDefault(scanner, "URL de Ollama", defaultOllamaUrl);
                 if (!url.isBlank() && !url.equals(defaultOllamaUrl)) ollamaUrl = url;
-                String model = readWithDefault(scanner, "\uD83D\uDCE6 Modelo Ollama", defaultOllamaModel);
+                String model = readWithDefault(scanner, "Modelo Ollama", defaultOllamaModel);
                 if (!model.isBlank() && !model.equals(defaultOllamaModel)) ollamaModel = model;
             } else {
-                String url = readWithDefault(scanner, "\uD83C\uDF10 URL de Groq", defaultGroqUrl);
+                String url = readWithDefault(scanner, "URL de Groq", defaultGroqUrl);
                 if (!url.isBlank() && !url.equals(defaultGroqUrl)) groqUrl = url;
-                String model = readWithDefault(scanner, "\uD83D\uDCE6 Modelo Groq", defaultGroqModel);
+                String model = readWithDefault(scanner, "Modelo Groq", defaultGroqModel);
                 if (!model.isBlank() && !model.equals(defaultGroqModel)) groqModel = model;
                 String keysHint = defaultGroqKey.isBlank() ? "(ninguna)" : "(configurada en application.yml)";
-                String keys = readWithDefault(scanner, "\uD83D\uDD11 API Keys Groq", keysHint);
+                String keys = readWithDefault(scanner, "API Keys Groq", keysHint);
                 if (!keys.isBlank() && !keys.equals(keysHint)) groqKeys = keys;
             }
 
-            int chunkSize = readIntRange(scanner, "\uD83D\uDCCA Claves por lote (10-150)", defaultChunkSize, 10, 150);
+            int chunkSize = readIntRange(scanner, "Claves por lote (10-150)", defaultChunkSize, 10, 150);
 
             return new TranslationConfigDTO(
                     modpackPath, engine, chunkSize,
@@ -81,7 +81,7 @@ public class InteractiveWizard {
         System.out.print(prompt);
         String input = scanner.nextLine().trim();
         while (input.isBlank()) {
-            System.out.print("  \u26A0\uFE0F Este campo es obligatorio. " + prompt);
+            System.out.print("  Este campo es obligatorio. " + prompt);
             input = scanner.nextLine().trim();
         }
         return input;
@@ -101,9 +101,9 @@ public class InteractiveWizard {
                 if (input.isBlank()) return defaultValue;
                 int value = Integer.parseInt(input);
                 if (value >= min && value <= max) return value;
-                System.out.println("  \u26A0\uFE0F Valor fuera de rango. Debe estar entre " + min + " y " + max + ".");
+                System.out.println("  Valor fuera de rango. Debe estar entre " + min + " y " + max + ".");
             } catch (NumberFormatException e) {
-                System.out.println("  \u274C Debes ingresar un n\u00famero v\u00e1lido.");
+                System.out.println("  Debes ingresar un número válido.");
             }
         }
     }
