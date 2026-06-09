@@ -19,6 +19,18 @@ import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
 
+/**
+ * Comando {@code mctranslator glossary} con subcomandos para gestionar el glosario
+ * persistente de traducciones. Lee y escribe el archivo {@code .mctranslator/glossary.json}
+ * dentro del directorio del modpack indicado con {@code --modpack}.
+ * <p>
+ * Subcomandos disponibles:
+ * <ul>
+ *   <li>{@code list} — Muestra las entradas del glosario en formato tabla.</li>
+ *   <li>{@code edit} — Agrega o modifica una entrada existente.</li>
+ *   <li>{@code export} — Exporta el glosario a JSON o CSV.</li>
+ * </ul>
+ */
 @Command(
         name = "glossary",
         description = "Gestiona el glosario de traducciones del modpack.",
@@ -58,6 +70,12 @@ public class GlossaryCommand implements Callable<Integer> {
         return 0;
     }
 
+    /**
+     * Construye un adaptador {@link JsonGlossaryAdapter} para la ruta del modpack.
+     * Si no se especificó {@code --modpack}, usa el directorio actual.
+     * Cada subcomando llama a este método para obtener su propia instancia conectada
+     * al archivo de glosario del modpack correspondiente.
+     */
     GlossaryPort createAdapter() {
         Path path = modpackPath != null ? modpackPath : Path.of(".");
         Path absolute = path.toAbsolutePath().normalize();
@@ -67,12 +85,18 @@ public class GlossaryCommand implements Callable<Integer> {
         return new JsonGlossaryAdapter(mapper, absolute);
     }
 
+    /**
+     * Subcomando {@code list}: muestra las entradas del glosario en formato de tabla
+     * con número, término en inglés, traducción al español y cantidad de ocurrencias.
+     * Soporta filtrado opcional con {@code --filter}.
+     */
     @Command(
             name = "list",
             description = "Lista las entradas del glosario."
     )
     static class ListCommand implements Callable<Integer> {
 
+        /** Referencia al comando padre para acceder a {@link #createAdapter()}. */
         @ParentCommand
         private GlossaryCommand parent;
 
@@ -94,7 +118,7 @@ public class GlossaryCommand implements Callable<Integer> {
                 entries = entries.stream()
                         .filter(e -> e.termEn().toLowerCase().contains(lower)
                                 || e.termEs().toLowerCase().contains(lower))
-                        .collect(Collectors.toList());
+                        .toList();
             }
 
             if (entries.isEmpty()) {
@@ -117,17 +141,24 @@ public class GlossaryCommand implements Callable<Integer> {
             return 0;
         }
 
+        /** Trunca un texto a {@code max} caracteres, agregando "..." si es más largo. */
         private String truncate(String s, int max) {
             return s.length() <= max ? s : s.substring(0, max - 3) + "...";
         }
     }
 
+    /**
+     * Subcomando {@code edit}: agrega una nueva entrada al glosario o modifica
+     * la traducción de una existente. Requiere el término en inglés como argumento
+     * posicional y la traducción como opción {@code --translation}.
+     */
     @Command(
             name = "edit",
             description = "Agrega o modifica una entrada del glosario."
     )
     static class EditCommand implements Callable<Integer> {
 
+        /** Referencia al comando padre para acceder a {@link #createAdapter()}. */
         @ParentCommand
         private GlossaryCommand parent;
 
@@ -166,12 +197,17 @@ public class GlossaryCommand implements Callable<Integer> {
         }
     }
 
+    /**
+     * Subcomando {@code export}: escribe el glosario completo en un archivo externo
+     * en formato JSON (por defecto) o CSV. Útil para respaldos, análisis o migración.
+     */
     @Command(
             name = "export",
             description = "Exporta el glosario a un archivo JSON o CSV."
     )
     static class ExportCommand implements Callable<Integer> {
 
+        /** Referencia al comando padre para acceder a {@link #createAdapter()}. */
         @ParentCommand
         private GlossaryCommand parent;
 
@@ -204,6 +240,7 @@ public class GlossaryCommand implements Callable<Integer> {
             return exportJson(entries);
         }
 
+        /** Exporta las entradas a JSON usando Jackson con pretty print. */
         private int exportJson(List<GlossaryEntry> entries) {
             try {
                 ObjectMapper mapper = JsonMapper.builder()
@@ -221,6 +258,7 @@ public class GlossaryCommand implements Callable<Integer> {
             }
         }
 
+        /** Exporta las entradas a CSV con cabecera y campos escapados entre comillas. */
         private int exportCsv(List<GlossaryEntry> entries) {
             try {
                 String csv = entries.stream()
@@ -243,6 +281,7 @@ public class GlossaryCommand implements Callable<Integer> {
             }
         }
 
+        /** Escapa comillas dobles dentro de un valor CSV duplicándolas (estándar RFC 4180). */
         private String escapeCsv(String value) {
             return value.replace("\"", "\"\"");
         }

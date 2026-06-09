@@ -44,5 +44,12 @@ public interface GlossaryPort {
      */
     Map<String, String> findRelevantTerms(Set<String> candidates);
 
+    /**
+     * Devuelve todas las entradas del glosario ordenadas alfabéticamente por
+     * término en inglés (case-insensitive). Útil para el comando CLI {@code list}
+     * y para exportaciones completas del glosario.
+     *
+     * @return Lista inmutable de todas las entradas, nunca {@code null}.
+     */
     List<GlossaryEntry> findAll();
 }

@@ -55,6 +55,14 @@ public class InMemoryGlossaryAdapter implements GlossaryPort {
         return Collections.unmodifiableMap(result);
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Implementación: devuelve todas las entradas del {@link HashMap} interno
+     * reconstruyendo objetos {@link GlossaryEntry} con valores por defecto
+     * (origen "in-memory", 1 ocurrencia, {@link Instant#EPOCH}). La lista es
+     * inmutable y está ordenada alfabéticamente.
+     */
     @Override
     public List<GlossaryEntry> findAll() {
         return store.entrySet().stream()

@@ -63,6 +63,12 @@ public class CommandLineTranslationAdapter implements CommandLineRunner, Callabl
         this.engineRegistry = engineRegistry;
     }
 
+    /**
+     * Punto de entrada del CLI invocado por Spring Boot después de inicializar
+     * el contexto. Construye el árbol de comandos Picocli con el comando raíz
+     * {@code mctranslator} y registra {@link GlossaryCommand} como subcomando
+     * para que esté disponible como {@code mctranslator glossary ...}.
+     */
     @Override
     public void run(String... args) {
         int exitCode = new CommandLine(this)

@@ -101,6 +101,13 @@ public class JsonGlossaryAdapter implements GlossaryPort {
         return Collections.unmodifiableMap(result);
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Implementación: devuelve todas las entradas del caché en memoria ordenadas
+     * alfabéticamente por término en inglés (insensible a mayúsculas). La lista
+     * es inmutable para evitar modificaciones accidentales del glosario interno.
+     */
     @Override
     public List<GlossaryEntry> findAll() {
         return cache.values().stream()
