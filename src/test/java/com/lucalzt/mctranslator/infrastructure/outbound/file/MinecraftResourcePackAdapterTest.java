@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -155,6 +156,104 @@ class MinecraftResourcePackAdapterTest {
             adapter.generate("deepmod", result, deepPath);
 
             assertTrue(Files.exists(deepPath.resolve("assets/deepmod/lang/es_es.json")));
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // hasCompleteTranslation
+    // -------------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("hasCompleteTranslation")
+    class HasCompleteTranslation {
+
+        @Test
+        @DisplayName("returns false when es_es.json does not exist")
+        void returnsFalse_whenFileDoesNotExist() {
+            assertFalse(adapter.hasCompleteTranslation("testmod", Set.of("key.1"), tempDir));
+        }
+
+        @Test
+        @DisplayName("returns false when originalKeys is empty")
+        void returnsFalse_whenOriginalKeysIsEmpty() throws IOException {
+            Path esEsFile = tempDir.resolve("assets/testmod/lang/es_es.json");
+            Files.createDirectories(esEsFile.getParent());
+            objectMapper.writeValue(esEsFile.toFile(), Map.of("key.1", "valor"));
+
+            assertFalse(adapter.hasCompleteTranslation("testmod", Set.of(), tempDir));
+        }
+
+        @Test
+        @DisplayName("returns true when es_es.json contains all original keys")
+        void returnsTrue_whenAllKeysPresent() throws IOException {
+            Map<String, String> translations = Map.of(
+                    "key.one", "Uno",
+                    "key.two", "Dos"
+            );
+            Path esEsFile = tempDir.resolve("assets/testmod/lang/es_es.json");
+            Files.createDirectories(esEsFile.getParent());
+            objectMapper.writeValue(esEsFile.toFile(), translations);
+
+            assertTrue(adapter.hasCompleteTranslation("testmod", Set.of("key.one", "key.two"), tempDir));
+        }
+
+        @Test
+        @DisplayName("returns true when es_es.json has extra keys beyond original")
+        void returnsTrue_whenFileHasExtraKeys() throws IOException {
+            Map<String, String> translations = Map.of(
+                    "key.one", "Uno",
+                    "key.two", "Dos",
+                    "key.three", "Tres"
+            );
+            Path esEsFile = tempDir.resolve("assets/testmod/lang/es_es.json");
+            Files.createDirectories(esEsFile.getParent());
+            objectMapper.writeValue(esEsFile.toFile(), translations);
+
+            assertTrue(adapter.hasCompleteTranslation("testmod", Set.of("key.one", "key.two"), tempDir));
+        }
+
+        @Test
+        @DisplayName("returns false when es_es.json is missing some original keys")
+        void returnsFalse_whenFileIsMissingKeys() throws IOException {
+            Map<String, String> translations = Map.of(
+                    "key.one", "Uno"
+            );
+            Path esEsFile = tempDir.resolve("assets/testmod/lang/es_es.json");
+            Files.createDirectories(esEsFile.getParent());
+            objectMapper.writeValue(esEsFile.toFile(), translations);
+
+            assertFalse(adapter.hasCompleteTranslation("testmod", Set.of("key.one", "key.two"), tempDir));
+        }
+
+        @Test
+        @DisplayName("returns false when es_es.json contains corrupt JSON")
+        void returnsFalse_whenFileIsCorrupt() throws IOException {
+            Path esEsFile = tempDir.resolve("assets/testmod/lang/es_es.json");
+            Files.createDirectories(esEsFile.getParent());
+            Files.writeString(esEsFile, "not valid json");
+
+            assertFalse(adapter.hasCompleteTranslation("testmod", Set.of("key.one"), tempDir));
+        }
+
+        @Test
+        @DisplayName("throws NullPointerException when modId is null")
+        void throwsNullPointerException_whenModIdIsNull() {
+            assertThrows(NullPointerException.class,
+                    () -> adapter.hasCompleteTranslation(null, Set.of("key"), tempDir));
+        }
+
+        @Test
+        @DisplayName("throws NullPointerException when originalKeys is null")
+        void throwsNullPointerException_whenOriginalKeysIsNull() {
+            assertThrows(NullPointerException.class,
+                    () -> adapter.hasCompleteTranslation("testmod", null, tempDir));
+        }
+
+        @Test
+        @DisplayName("throws NullPointerException when resourcePacksPath is null")
+        void throwsNullPointerException_whenResourcePacksPathIsNull() {
+            assertThrows(NullPointerException.class,
+                    () -> adapter.hasCompleteTranslation("testmod", Set.of("key"), null));
         }
     }
 }

@@ -138,6 +138,11 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
                 return;
             }
 
+            if (resourcePackGenerator.hasCompleteTranslation(modId, modLanguageFile.translations().keySet(), pathResolver.getResourcePacksPath())) {
+                LOGGER.log(System.Logger.Level.INFO, "El mod '{0}' ({1}) ya tiene un archivo de traducción completo en el Resource Pack. Omitiendo.", filename, modId);
+                return;
+            }
+
             Set<String> checkpointKeys = checkpointRepository.load(modId);
             LOGGER.log(System.Logger.Level.DEBUG, "Progreso de checkpoint cargado para '{0}': {1} claves ya traducidas.", modId, checkpointKeys.size());
 
