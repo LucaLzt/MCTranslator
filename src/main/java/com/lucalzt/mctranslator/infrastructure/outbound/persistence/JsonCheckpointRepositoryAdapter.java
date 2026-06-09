@@ -85,7 +85,7 @@ public class JsonCheckpointRepositoryAdapter implements CheckpointRepositoryPort
             return Set.copyOf(data.translatedKeys());
 
         } catch (IOException e) {
-            LOGGER.log(System.Logger.Level.WARNING, "El archivo de checkpoint en {0} está corrupto o es ilegible. Se ignorará y se reanudará en blanco.", checkpointFile.toAbsolutePath(), e);
+            LOGGER.log(System.Logger.Level.WARNING, "El archivo de checkpoint en {0} está corrupto o es ilegible: {1}. Se ignorará y se reanudará en blanco.", checkpointFile.toAbsolutePath(), e.getMessage());
             return Collections.emptySet();
         }
     }

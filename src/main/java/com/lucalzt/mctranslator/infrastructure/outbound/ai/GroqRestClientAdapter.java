@@ -88,7 +88,7 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
 
     @Override
     public TranslationResult translate(TranslationChunk chunk) {
-        Objects.requireNonNull(chunk, "El lote de traducci\u00f3n no puede ser nulo");
+        Objects.requireNonNull(chunk, "El lote de traducción no puede ser nulo");
 
         Map<String, String> totalTranslations = chunk.translationsToTranslate();
         if (totalTranslations.isEmpty()) {
@@ -126,7 +126,7 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
             GroqRequest payload = new GroqRequest(
                     activeModel,
                     List.of(
-                            new Message("system", "Traduce el JSON de Minecraft de ingl\u00e9s a espa\u00f1ol (es_es). Conserva claves y c\u00f3digos de formato intactos. Responde \u00fanicamente con el JSON."),
+                            new Message("system", "Traduce el JSON de Minecraft de inglés a español (es_es). Conserva claves y códigos de formato intactos. Responde únicamente con el JSON."),
                             new Message("user", buildPrompt(translations))
                     ),
                     0.0,
@@ -147,7 +147,7 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
                         .body(GroqResponse.class);
 
                 if (response == null || response.choices() == null || response.choices().isEmpty()) {
-                    throw new RuntimeException("La API de Groq retorn\u00f3 una respuesta vac\u00eda.");
+                    throw new RuntimeException("La API de Groq retornó una respuesta vacía.");
                 }
 
                 String rawTextResponse = response.choices().getFirst().message().content();
@@ -172,7 +172,7 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
                     }
                     case 400, 413, 422 -> {
                         if (errorBody.contains("json_validate_failed") || errorBody.contains("max completion tokens")) {
-                            backoffMs = sleepAndCalculateBackoff(backoffMs, "Modelo agot\u00f3 tokens de salida (json_validate_failed).");
+                            backoffMs = sleepAndCalculateBackoff(backoffMs, "Modelo agotó tokens de salida (json_validate_failed).");
                         } else {
                             throw new ChunkFatalException("Error fatal en lote " + chunkId, chunkId, ex);
                         }
@@ -196,7 +196,7 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
     }
 
     private long sleepAndCalculateBackoff(long currentBackoffMs, String reason) {
-        LOGGER.log(System.Logger.Level.WARNING, "{0} \u2014 pausa {1}ms", reason, currentBackoffMs);
+        LOGGER.log(System.Logger.Level.WARNING, "{0} — pausa {1}ms", reason, currentBackoffMs);
         try {
             Thread.sleep(currentBackoffMs);
         } catch (InterruptedException ie) {

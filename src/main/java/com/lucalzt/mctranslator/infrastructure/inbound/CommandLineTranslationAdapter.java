@@ -21,7 +21,7 @@ import java.util.concurrent.Callable;
         name = "mctranslator",
         mixinStandardHelpOptions = true,
         version = "MCTranslator 1.0.0",
-        description = "Traduce los archivos de idioma de un modpack de Minecraft al espa\u00f1ol."
+        description = "Traduce los archivos de idioma de un modpack de Minecraft al español."
 )
 public class CommandLineTranslationAdapter implements CommandLineRunner, Callable<Integer> {
 
@@ -107,7 +107,7 @@ public class CommandLineTranslationAdapter implements CommandLineRunner, Callabl
                     return 2;
                 }
 
-                LOGGER.log(System.Logger.Level.INFO, "Ruta del modpack recibida e identificada con \u00e9xito: '{}'", absolutePath);
+                LOGGER.log(System.Logger.Level.INFO, "Ruta del modpack recibida e identificada con éxito: '{}'", absolutePath);
 
                 checkpointRepository.setModpackPath(absolutePath);
                 LOGGER.log(System.Logger.Level.INFO, "Repositorio de checkpoints enlazado exitosamente al directorio del modpack.");
@@ -116,12 +116,12 @@ public class CommandLineTranslationAdapter implements CommandLineRunner, Callabl
             }
 
             LOGGER.log(System.Logger.Level.INFO, "==================================================================");
-            LOGGER.log(System.Logger.Level.INFO, "\u00a1PROCESO COMPLETADO! Las traducciones se han generado con \u00e9xito.");
+            LOGGER.log(System.Logger.Level.INFO, "¡PROCESO COMPLETADO! Las traducciones se han generado con éxito.");
             LOGGER.log(System.Logger.Level.INFO, "==================================================================");
             return 0;
 
         } catch (Exception e) {
-            LOGGER.log(System.Logger.Level.ERROR, "Fallo cr\u00edtico en la ejecuci\u00f3n del pipeline de traducci\u00f3n.", e);
+            LOGGER.log(System.Logger.Level.ERROR, "Fallo crítico en la ejecución del pipeline de traducción.", e);
             return 1;
         }
     }

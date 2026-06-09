@@ -1,5 +1,6 @@
 package com.lucalzt.mctranslator.infrastructure.outbound.file;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lucalzt.mctranslator.domain.model.TranslationResult;
 import com.lucalzt.mctranslator.ports.outbound.ResourcePackGeneratorPort;
@@ -9,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Adaptador de salida encargado de escribir físicamente las traducciones en español
@@ -57,6 +59,35 @@ public class MinecraftResourcePackAdapter implements ResourcePackGeneratorPort {
         } catch (IOException e) {
             LOGGER.log(System.Logger.Level.ERROR, "Fallo de E/S al escribir en la estructura del Resource Pack para el mod: " + modId, e);
             throw new RuntimeException("Error de infraestructura de archivos al generar traducciones finales", e);
+        }
+    }
+
+    @Override
+    public boolean hasCompleteTranslation(String modId, Set<String> originalKeys, Path resourcePacksPath) {
+        Objects.requireNonNull(modId, "El identificador del mod no puede ser nulo");
+        Objects.requireNonNull(originalKeys, "El conjunto de claves originales no puede ser nulo");
+        Objects.requireNonNull(resourcePacksPath, "La ruta del Resource Pack no puede ser nula");
+
+        if (originalKeys.isEmpty()) {
+            return false;
+        }
+
+        Path esEsFile = resourcePacksPath.resolve("assets").resolve(modId).resolve("lang/es_es.json");
+
+        if (!Files.exists(esEsFile)) {
+            return false;
+        }
+
+        try {
+            Map<String, Object> existing = objectMapper.readValue(esEsFile.toFile(), new TypeReference<Map<String, Object>>() {});
+            boolean complete = existing.keySet().containsAll(originalKeys);
+            if (complete) {
+                LOGGER.log(System.Logger.Level.INFO, "El archivo de traducción {0} ya contiene todas las claves. Omitiendo reprocesamiento.", esEsFile.toAbsolutePath());
+            }
+            return complete;
+        } catch (IOException e) {
+            LOGGER.log(System.Logger.Level.WARNING, "No se pudo leer el archivo de traducción existente en {0}. Se re-procesará.", esEsFile.toAbsolutePath());
+            return false;
         }
     }
 
