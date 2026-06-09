@@ -12,6 +12,7 @@ import com.lucalzt.mctranslator.infrastructure.config.EngineRegistry;
 import com.lucalzt.mctranslator.infrastructure.inbound.TranslationConfigDTO;
 import com.lucalzt.mctranslator.ports.inbound.TranslateModpackUseCase;
 import com.lucalzt.mctranslator.ports.outbound.CheckpointRepositoryPort;
+import com.lucalzt.mctranslator.ports.outbound.GlossaryPort;
 import com.lucalzt.mctranslator.ports.outbound.ModExtractorPort;
 import com.lucalzt.mctranslator.ports.outbound.ResourcePackGeneratorPort;
 import com.lucalzt.mctranslator.ports.outbound.TranslationEnginePort;
@@ -41,6 +42,8 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
     private final TranslationResultValidator validator;
 
     private final EngineRegistry engineRegistry;
+    private final GlossaryPort glossaryPort;
+    private final GlossaryContextBuilder glossaryContextBuilder;
     private final String defaultEngine;
     private final int defaultChunkSize;
 
@@ -55,6 +58,7 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
             CheckpointFilter checkpointFilter,
             TranslationResultValidator validator,
             EngineRegistry engineRegistry,
+            GlossaryPort glossaryPort,
             String defaultEngine,
             int defaultChunkSize
     ) {
@@ -65,6 +69,8 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
         this.checkpointFilter = Objects.requireNonNull(checkpointFilter, "El servicio CheckpointFilter no puede ser nulo");
         this.validator = Objects.requireNonNull(validator, "El validador de resultados no puede ser nulo");
         this.engineRegistry = Objects.requireNonNull(engineRegistry, "El registro de motores EngineRegistry no puede ser nulo");
+        this.glossaryPort = glossaryPort;
+        this.glossaryContextBuilder = new GlossaryContextBuilder();
         this.defaultEngine = Objects.requireNonNull(defaultEngine, "El nombre del motor por defecto no puede ser nulo");
         if (defaultChunkSize <= 0) {
             throw new IllegalArgumentException("El tamaño de lote por defecto debe ser mayor a cero");
@@ -95,6 +101,11 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
         TranslationEnginePort activeEngine = engineRegistry.getActive();
         if (activeEngine == null) {
             throw new IllegalStateException("No hay un motor de traducción activo registrado en el EngineRegistry");
+        }
+
+        if (glossaryPort != null) {
+            activeEngine = new GlossaryAwareTranslator(activeEngine, glossaryPort, glossaryContextBuilder);
+            LOGGER.log(System.Logger.Level.INFO, "Glosario persistente activo - el motor de traducción está envuelto en GlossaryAwareTranslator.");
         }
 
         ModpackPathResolver pathResolver = new ModpackPathResolver(Path.of(modpackPath));
