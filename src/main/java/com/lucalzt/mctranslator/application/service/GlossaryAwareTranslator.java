@@ -15,6 +15,19 @@ public class GlossaryAwareTranslator implements TranslationEnginePort {
 
     static final String GLOSSARY_CONTEXT_KEY = "__glossary_context__";
 
+    private static final Set<String> STOPWORDS = Set.of(
+        "You", "Your", "The", "All", "Both", "Each", "Any",
+        "When", "While", "Only", "Always", "Never", "Also", "Just",
+        "Show", "Save", "Insert", "Press", "Move", "Choose",
+        "Select", "Reset", "Configure", "Install", "Rename",
+        "Allow", "Disallow", "Extract", "Cut", "Sort",
+        "Active", "Completed", "Complete", "Disabled", "Locked",
+        "Enabled", "None", "Empty", "Ready", "Found", "Loading",
+        "Options", "Filters", "Description", "Inventory", "Priority",
+        "Mode", "Back", "Next", "Month", "Mod", "Mobs",
+        "Requires", "Determines", "Allows"
+    );
+
     private final TranslationEnginePort delegate;
     private final GlossaryPort glossaryPort;
     private final GlossaryContextBuilder contextBuilder;
@@ -73,8 +86,13 @@ public class GlossaryAwareTranslator implements TranslationEnginePort {
         String[] words = text.split("[\\s_/]+");
         for (String word : words) {
             word = word.trim();
-            if (word.length() >= 3 && Character.isUpperCase(word.charAt(0))) {
-                candidates.add(word);
+            String cleaned = word.replaceAll("[^a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\\-]", "").trim();
+            if (!cleaned.equals(word)) continue;
+            if (cleaned.length() >= 3
+                    && Character.isUpperCase(cleaned.charAt(0))
+                    && !STOPWORDS.contains(cleaned)
+                    && !cleaned.equals(cleaned.toUpperCase())) {
+                candidates.add(cleaned);
             }
         }
     }
@@ -130,8 +148,13 @@ public class GlossaryAwareTranslator implements TranslationEnginePort {
         String[] words = text.split("[\\s_/]+");
         for (String word : words) {
             word = word.trim();
-            if (word.length() >= 3 && Character.isUpperCase(word.charAt(0))) {
-                terms.add(word);
+            String cleaned = word.replaceAll("[^a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\\-]", "").trim();
+            if (!cleaned.equals(word)) continue;
+            if (cleaned.length() >= 3
+                    && Character.isUpperCase(cleaned.charAt(0))
+                    && !STOPWORDS.contains(cleaned)
+                    && !cleaned.equals(cleaned.toUpperCase())) {
+                terms.add(cleaned);
             }
         }
         return terms;
