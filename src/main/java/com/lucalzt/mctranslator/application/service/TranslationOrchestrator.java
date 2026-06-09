@@ -1,5 +1,7 @@
 package com.lucalzt.mctranslator.application.service;
 
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.lucalzt.mctranslator.domain.exception.SessionFatalException;
 import com.lucalzt.mctranslator.domain.model.ModLanguageFile;
 import com.lucalzt.mctranslator.domain.model.ModpackPathResolver;
@@ -10,8 +12,10 @@ import com.lucalzt.mctranslator.domain.service.ChunkingService;
 import com.lucalzt.mctranslator.domain.service.TranslationResultValidator;
 import com.lucalzt.mctranslator.infrastructure.config.EngineRegistry;
 import com.lucalzt.mctranslator.infrastructure.inbound.TranslationConfigDTO;
+import com.lucalzt.mctranslator.infrastructure.outbound.glossary.JsonGlossaryAdapter;
 import com.lucalzt.mctranslator.ports.inbound.TranslateModpackUseCase;
 import com.lucalzt.mctranslator.ports.outbound.CheckpointRepositoryPort;
+import com.lucalzt.mctranslator.ports.outbound.GlossaryPort;
 import com.lucalzt.mctranslator.ports.outbound.ModExtractorPort;
 import com.lucalzt.mctranslator.ports.outbound.ResourcePackGeneratorPort;
 import com.lucalzt.mctranslator.ports.outbound.TranslationEnginePort;
@@ -41,6 +45,7 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
     private final TranslationResultValidator validator;
 
     private final EngineRegistry engineRegistry;
+    private GlossaryPort glossaryAdapter;
     private final String defaultEngine;
     private final int defaultChunkSize;
 
@@ -72,6 +77,19 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
         this.defaultChunkSize = defaultChunkSize;
     }
 
+    /**
+     * Configura la ruta del modpack para habilitar el glosario persistente.
+     * Crea internamente un {@link JsonGlossaryAdapter} que lee/escribe
+     * {@code .mctranslator/glossary.json} dentro del directorio del modpack.
+     * Si no se llama a este método, el pipeline traduce sin glosario.
+     */
+    public void setGlossaryPath(Path modpackPath) {
+        this.glossaryAdapter = new JsonGlossaryAdapter(
+                new JsonMapper().registerModule(new JavaTimeModule()),
+                modpackPath
+        );
+    }
+
     @Override
     public void execute(String modpackPath) {
         execute(modpackPath, null);
@@ -95,6 +113,11 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
         TranslationEnginePort activeEngine = engineRegistry.getActive();
         if (activeEngine == null) {
             throw new IllegalStateException("No hay un motor de traducción activo registrado en el EngineRegistry");
+        }
+
+        if (glossaryAdapter != null) {
+            activeEngine = new GlossaryAwareTranslator(activeEngine, glossaryAdapter, new GlossaryContextBuilder());
+            LOGGER.log(System.Logger.Level.INFO, "Glosario persistente activo - el motor de traducción está envuelto en GlossaryAwareTranslator.");
         }
 
         ModpackPathResolver pathResolver = new ModpackPathResolver(Path.of(modpackPath));

@@ -5,7 +5,6 @@ import com.lucalzt.mctranslator.domain.service.CheckpointFilter;
 import com.lucalzt.mctranslator.domain.service.ChunkingService;
 import com.lucalzt.mctranslator.domain.service.TranslationResultValidator;
 import com.lucalzt.mctranslator.infrastructure.outbound.persistence.JsonCheckpointRepositoryAdapter;
-import com.lucalzt.mctranslator.ports.inbound.TranslateModpackUseCase;
 import com.lucalzt.mctranslator.ports.outbound.ModExtractorPort;
 import com.lucalzt.mctranslator.ports.outbound.ResourcePackGeneratorPort;
 import org.springframework.beans.factory.annotation.Value;
@@ -33,7 +32,7 @@ public class OrchestratorConfig {
      * @return El Bean activo del orquestador del pipeline.
      */
     @Bean
-    public TranslateModpackUseCase translateModpackUseCase(
+    public TranslationOrchestrator translationOrchestrator(
             ModExtractorPort modExtractor,
             ResourcePackGeneratorPort resourcePackGenerator,
             JsonCheckpointRepositoryAdapter checkpointRepository,

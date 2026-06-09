@@ -1,10 +1,11 @@
 package com.lucalzt.mctranslator.infrastructure.inbound;
 
+import com.lucalzt.mctranslator.application.service.TranslationOrchestrator;
 import com.lucalzt.mctranslator.infrastructure.config.EngineRegistry;
+import com.lucalzt.mctranslator.infrastructure.inbound.glossary.GlossaryCommand;
 import com.lucalzt.mctranslator.infrastructure.outbound.ai.GroqRestClientAdapter;
 import com.lucalzt.mctranslator.infrastructure.outbound.ai.OllamaRestClientAdapter;
 import com.lucalzt.mctranslator.infrastructure.outbound.persistence.JsonCheckpointRepositoryAdapter;
-import com.lucalzt.mctranslator.ports.inbound.TranslateModpackUseCase;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 import picocli.CommandLine;
@@ -45,26 +46,34 @@ public class CommandLineTranslationAdapter implements CommandLineRunner, Callabl
     )
     private boolean forceWizard;
 
-    private final TranslateModpackUseCase translateModpackUseCase;
+    private final TranslationOrchestrator translationOrchestrator;
     private final JsonCheckpointRepositoryAdapter checkpointRepository;
     private final InteractiveWizard wizard;
     private final EngineRegistry engineRegistry;
 
     public CommandLineTranslationAdapter(
-            TranslateModpackUseCase translateModpackUseCase,
+            TranslationOrchestrator translationOrchestrator,
             JsonCheckpointRepositoryAdapter checkpointRepository,
             InteractiveWizard wizard,
             EngineRegistry engineRegistry
     ) {
-        this.translateModpackUseCase = translateModpackUseCase;
+        this.translationOrchestrator = translationOrchestrator;
         this.checkpointRepository = checkpointRepository;
         this.wizard = wizard;
         this.engineRegistry = engineRegistry;
     }
 
+    /**
+     * Punto de entrada del CLI invocado por Spring Boot después de inicializar
+     * el contexto. Construye el árbol de comandos Picocli con el comando raíz
+     * {@code mctranslator} y registra {@link GlossaryCommand} como subcomando
+     * para que esté disponible como {@code mctranslator glossary ...}.
+     */
     @Override
     public void run(String... args) {
-        int exitCode = new CommandLine(this).execute(args);
+        int exitCode = new CommandLine(this)
+                .addSubcommand(new GlossaryCommand())
+                .execute(args);
         if (exitCode != 0) {
             System.exit(exitCode);
         }
@@ -98,7 +107,10 @@ public class CommandLineTranslationAdapter implements CommandLineRunner, Callabl
                 checkpointRepository.setModpackPath(absolutePath);
                 LOGGER.log(System.Logger.Level.INFO, "Repositorio de checkpoints enlazado exitosamente al directorio del modpack.");
 
-                translateModpackUseCase.execute(cfg.modpackPath(), cfg);
+                translationOrchestrator.setGlossaryPath(absolutePath);
+                LOGGER.log(System.Logger.Level.INFO, "Glosario persistente enlazado al directorio del modpack.");
+
+                translationOrchestrator.execute(cfg.modpackPath(), cfg);
             } else {
                 Path absolutePath = modpackPath.toAbsolutePath();
 
@@ -112,7 +124,10 @@ public class CommandLineTranslationAdapter implements CommandLineRunner, Callabl
                 checkpointRepository.setModpackPath(absolutePath);
                 LOGGER.log(System.Logger.Level.INFO, "Repositorio de checkpoints enlazado exitosamente al directorio del modpack.");
 
-                translateModpackUseCase.execute(absolutePath.toString());
+                translationOrchestrator.setGlossaryPath(absolutePath);
+                LOGGER.log(System.Logger.Level.INFO, "Glosario persistente enlazado al directorio del modpack.");
+
+                translationOrchestrator.execute(absolutePath.toString());
             }
 
             LOGGER.log(System.Logger.Level.INFO, "==================================================================");

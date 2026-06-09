@@ -119,16 +119,29 @@ public class GroqRestClientAdapter implements TranslationEnginePort {
     private Map<String, String> translateWithRetry(int chunkId, Map<String, String> translations) {
         long backoffMs = INITIAL_BACKOFF_MS;
 
+        Map<String, String> mutableTranslations = new HashMap<>(translations);
+        String glossaryContext = mutableTranslations.remove("__glossary_context__");
+
         for (int intento = 1; intento <= MAX_RETRIES; intento++) {
             String activeModel = currentModel.id();
             int activeMaxTokens = currentModel.maxTokens();
 
+            List<Message> messages = new ArrayList<>();
+            messages.add(new Message("system",
+                    "Traduce el JSON de Minecraft de inglés a español (es_es). Conserva claves y códigos de formato intactos. Responde únicamente con el JSON."));
+
+            if (glossaryContext != null && !glossaryContext.isBlank()) {
+                messages.add(new Message("system",
+                        "CONTEXTO DE GLOSARIO (traducciones previas que DEBES respetar para mantener consistencia):\n"
+                        + glossaryContext
+                        + "\nUsa estas traducciones como referencia obligatoria. Si un término aparece aquí, NO lo traduzcas de otra forma."));
+            }
+
+            messages.add(new Message("user", buildPrompt(mutableTranslations)));
+
             GroqRequest payload = new GroqRequest(
                     activeModel,
-                    List.of(
-                            new Message("system", "Traduce el JSON de Minecraft de inglés a español (es_es). Conserva claves y códigos de formato intactos. Responde únicamente con el JSON."),
-                            new Message("user", buildPrompt(translations))
-                    ),
+                    messages,
                     0.0,
                     new ResponseFormat("json_object"),
                     activeMaxTokens
