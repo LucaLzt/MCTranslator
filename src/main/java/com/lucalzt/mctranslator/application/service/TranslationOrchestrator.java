@@ -14,9 +14,14 @@ import com.lucalzt.mctranslator.infrastructure.config.EngineRegistry;
 import com.lucalzt.mctranslator.infrastructure.inbound.TranslationConfigDTO;
 import com.lucalzt.mctranslator.infrastructure.outbound.glossary.JsonGlossaryAdapter;
 import com.lucalzt.mctranslator.ports.inbound.TranslateModpackUseCase;
+import com.lucalzt.mctranslator.domain.model.QuestData;
+import com.lucalzt.mctranslator.domain.model.QuestSystemType;
+import com.lucalzt.mctranslator.domain.service.QuestFileDetector;
 import com.lucalzt.mctranslator.ports.outbound.CheckpointRepositoryPort;
 import com.lucalzt.mctranslator.ports.outbound.GlossaryPort;
 import com.lucalzt.mctranslator.ports.outbound.ModExtractorPort;
+import com.lucalzt.mctranslator.ports.outbound.QuestExtractorPort;
+import com.lucalzt.mctranslator.ports.outbound.QuestWriterPort;
 import com.lucalzt.mctranslator.ports.outbound.ResourcePackGeneratorPort;
 import com.lucalzt.mctranslator.ports.outbound.TranslationEnginePort;
 
@@ -49,6 +54,10 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
     private final String defaultEngine;
     private final int defaultChunkSize;
 
+    private final QuestFileDetector questFileDetector;
+    private final QuestExtractorPort questExtractor;
+    private final QuestWriterPort questWriter;
+
     /**
      * Construye un nuevo orquestador con soporte de motores dinámicos.
      */
@@ -61,7 +70,10 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
             TranslationResultValidator validator,
             EngineRegistry engineRegistry,
             String defaultEngine,
-            int defaultChunkSize
+            int defaultChunkSize,
+            QuestFileDetector questFileDetector,
+            QuestExtractorPort questExtractor,
+            QuestWriterPort questWriter
     ) {
         this.modExtractor = Objects.requireNonNull(modExtractor, "El puerto ModExtractorPort no puede ser nulo");
         this.resourcePackGenerator = Objects.requireNonNull(resourcePackGenerator, "El puerto ResourcePackGeneratorPort no puede ser nulo");
@@ -75,6 +87,9 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
             throw new IllegalArgumentException("El tamaño de lote por defecto debe ser mayor a cero");
         }
         this.defaultChunkSize = defaultChunkSize;
+        this.questFileDetector = Objects.requireNonNull(questFileDetector, "QuestFileDetector no puede ser nulo");
+        this.questExtractor = Objects.requireNonNull(questExtractor, "QuestExtractorPort no puede ser nulo");
+        this.questWriter = Objects.requireNonNull(questWriter, "QuestWriterPort no puede ser nulo");
     }
 
     /**
@@ -99,6 +114,9 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
     public void execute(String modpackPath, TranslationConfigDTO overrides) {
         LOGGER.log(System.Logger.Level.INFO, "Iniciando pipeline de traducción para el modpack en la ruta: {0}", modpackPath);
 
+        boolean modsOnly = overrides != null && Boolean.TRUE.equals(overrides.modsOnly());
+        boolean questsOnly = overrides != null && Boolean.TRUE.equals(overrides.questsOnly());
+
         String engineToUse = defaultEngine;
         if (overrides != null && overrides.engine() != null) {
             engineToUse = overrides.engine();
@@ -121,6 +139,19 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
         }
 
         ModpackPathResolver pathResolver = new ModpackPathResolver(Path.of(modpackPath));
+
+        if (!questsOnly) {
+            processMods(pathResolver, activeEngine, effectiveChunkSize);
+        }
+
+        if (!modsOnly) {
+            processQuests(pathResolver, activeEngine, effectiveChunkSize);
+        }
+
+        LOGGER.log(System.Logger.Level.INFO, "Pipeline de traducción finalizado con éxito.");
+    }
+
+    private void processMods(ModpackPathResolver pathResolver, TranslationEnginePort activeEngine, int maxChunkSize) {
         Path modsPath = pathResolver.getModsPath();
 
         if (!Files.exists(modsPath) || !Files.isDirectory(modsPath)) {
@@ -142,10 +173,78 @@ public class TranslationOrchestrator implements TranslateModpackUseCase {
         LOGGER.log(System.Logger.Level.INFO, "Se identificaron {0} archivos de mods (.jar) para procesar.", jarFiles.size());
 
         for (Path jarPath : jarFiles) {
-            processMod(jarPath, pathResolver, activeEngine, effectiveChunkSize);
+            processMod(jarPath, pathResolver, activeEngine, maxChunkSize);
         }
 
         LOGGER.log(System.Logger.Level.INFO, "Pipeline de traducción de mods finalizado con éxito.");
+    }
+
+    private void processQuests(ModpackPathResolver pathResolver, TranslationEnginePort activeEngine, int maxChunkSize) {
+        Path modpackPath = pathResolver.modpackPath();
+
+        QuestSystemType systemType = questFileDetector.detect(modpackPath);
+        if (systemType == QuestSystemType.NONE) {
+            LOGGER.log(System.Logger.Level.INFO, "No se detectó ningún sistema de misiones conocido. Omitiendo.");
+            return;
+        }
+
+        LOGGER.log(System.Logger.Level.INFO, "Sistema de misiones detectado: {0}", systemType);
+
+        QuestData questData = questExtractor.extract(modpackPath);
+        if (questData.systemType() == QuestSystemType.NONE || questData.entries().isEmpty()) {
+            LOGGER.log(System.Logger.Level.INFO, "No se encontraron textos de misiones para traducir. Omitiendo.");
+            return;
+        }
+
+        String checkpointId = "__quests__";
+        Set<String> checkpointKeys = checkpointRepository.load(checkpointId);
+        LOGGER.log(System.Logger.Level.DEBUG, "Progreso de checkpoint cargado para quests: {0} claves ya traducidas.", checkpointKeys.size());
+
+        Map<String, String> pendingKeys = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : questData.entries().entrySet()) {
+            if (!checkpointKeys.contains(entry.getKey())) {
+                pendingKeys.put(entry.getKey(), entry.getValue());
+            }
+        }
+
+        if (pendingKeys.isEmpty()) {
+            LOGGER.log(System.Logger.Level.INFO, "Todas las misiones ya están traducidas. Omitiendo.");
+            return;
+        }
+
+        LOGGER.log(System.Logger.Level.INFO, "Traduciendo {0} textos de misiones.", pendingKeys.size());
+
+        List<TranslationChunk> chunks = chunkingService.split(pendingKeys, maxChunkSize);
+        LOGGER.log(System.Logger.Level.DEBUG, "Se segmentaron las misiones en {0} lotes.", chunks.size());
+
+        Set<String> progressKeys = new HashSet<>(checkpointKeys);
+        Map<String, String> allTranslations = new HashMap<>();
+
+        for (TranslationChunk chunk : chunks) {
+            LOGGER.log(System.Logger.Level.INFO, "Traduciendo lote de misiones {0}/{1} ({2} textos)...",
+                    chunk.chunkId() + 1, chunks.size(), chunk.size());
+
+            try {
+                TranslationResult result = activeEngine.translate(chunk);
+                validator.validate(chunk, result);
+
+                for (var entry : result.translatedTranslations().entrySet()) {
+                    if (entry.getValue() != null && !entry.getValue().isBlank()) {
+                        allTranslations.put(entry.getKey(), entry.getValue());
+                    }
+                }
+
+                progressKeys.addAll(allTranslations.keySet());
+                checkpointRepository.save(checkpointId, progressKeys);
+
+            } catch (Exception e) {
+                LOGGER.log(System.Logger.Level.WARNING, "Error al traducir lote de misiones {0}. Continuando.", chunk.chunkId() + 1);
+            }
+        }
+
+        questWriter.write(modpackPath, questData, allTranslations);
+
+        LOGGER.log(System.Logger.Level.INFO, "Traducción de misiones completada: {0} textos traducidos.", allTranslations.size());
     }
 
     private void processMod(Path jarPath, ModpackPathResolver pathResolver, TranslationEnginePort activeEngine, int maxChunkSize) {
