@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -158,6 +159,39 @@ class GlossaryAwareTranslatorTest {
             assertTrue(candidates.contains("KeyStone"));
         }
 
+        @Test
+        @DisplayName("extractCandidates excludes stopwords")
+        void extractCandidates_excludesStopwords() {
+            Set<String> candidates = GlossaryAwareTranslator.extractCandidates(
+                    Map.of("key", "When Always Only"));
+            assertTrue(candidates.isEmpty());
+        }
+
+        @Test
+        @DisplayName("extractCandidates excludes ALL_CAPS words")
+        void extractCandidates_excludesAllCaps() {
+            Set<String> candidates = GlossaryAwareTranslator.extractCandidates(
+                    Map.of("key", "SHIFT CTRL ALT"));
+            assertTrue(candidates.isEmpty());
+        }
+
+        @Test
+        @DisplayName("extractCandidates rejects words with trailing punctuation")
+        void extractCandidates_rejectsWordsWithTrailingPunctuation() {
+            Set<String> candidates = GlossaryAwareTranslator.extractCandidates(
+                    Map.of("key", "Testing... Valid: Search... Checking... Mode: Wait:"));
+            assertTrue(candidates.isEmpty());
+        }
+
+        @Test
+        @DisplayName("extractCandidates applies all filters leaving only real mod terms")
+        void extractCandidates_appliesAllFilters() {
+            Set<String> candidates = GlossaryAwareTranslator.extractCandidates(
+                    Map.of("key", "Stone When SHIFT Checking..."));
+            assertEquals(1, candidates.size());
+            assertTrue(candidates.contains("Stone"));
+        }
+
         // -- translate flow --
 
         @Test
@@ -241,6 +275,48 @@ class GlossaryAwareTranslatorTest {
             when(contextBuilder.buildContext(Map.of())).thenReturn("");
             when(delegate.translate(any())).thenReturn(
                     new TranslationResult(0, Map.of("item.1", "hola mundo"), Instant.now()));
+
+            translator.translate(chunk);
+
+            verify(glossaryPort, never()).save(any(), any());
+        }
+
+        @Test
+        @DisplayName("does not save when term is a stopword")
+        void doesNotSave_whenTermIsStopword() {
+            TranslationChunk chunk = new TranslationChunk(0, Map.of("item.1", "When"));
+            when(glossaryPort.findRelevantTerms(any())).thenReturn(Map.of());
+            when(contextBuilder.buildContext(Map.of())).thenReturn("");
+            when(delegate.translate(any())).thenReturn(
+                    new TranslationResult(0, Map.of("item.1", "Cuando"), Instant.now()));
+
+            translator.translate(chunk);
+
+            verify(glossaryPort, never()).save(any(), any());
+        }
+
+        @Test
+        @DisplayName("does not save when term is ALL_CAPS")
+        void doesNotSave_whenTermIsAllCaps() {
+            TranslationChunk chunk = new TranslationChunk(0, Map.of("item.1", "SHIFT"));
+            when(glossaryPort.findRelevantTerms(any())).thenReturn(Map.of());
+            when(contextBuilder.buildContext(Map.of())).thenReturn("");
+            when(delegate.translate(any())).thenReturn(
+                    new TranslationResult(0, Map.of("item.1", "Mayús"), Instant.now()));
+
+            translator.translate(chunk);
+
+            verify(glossaryPort, never()).save(any(), any());
+        }
+
+        @Test
+        @DisplayName("does not save when term has trailing punctuation")
+        void doesNotSave_whenTermHasTrailingPunctuation() {
+            TranslationChunk chunk = new TranslationChunk(0, Map.of("item.1", "Checking..."));
+            when(glossaryPort.findRelevantTerms(any())).thenReturn(Map.of());
+            when(contextBuilder.buildContext(Map.of())).thenReturn("");
+            when(delegate.translate(any())).thenReturn(
+                    new TranslationResult(0, Map.of("item.1", "Comprobando..."), Instant.now()));
 
             translator.translate(chunk);
 
