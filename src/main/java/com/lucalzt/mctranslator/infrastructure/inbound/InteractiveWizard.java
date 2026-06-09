@@ -69,11 +69,19 @@ public class InteractiveWizard {
 
             int chunkSize = readIntRange(scanner, "Claves por lote (10-150)", defaultChunkSize, 10, 150);
 
+            Boolean questsOnly = null;
+            Boolean modsOnly = null;
+            String scope = readWithDefault(scanner, "Ámbito (1=mods+quests, 2=solo mods, 3=solo quests)", "1");
+            switch (scope) {
+                case "2" -> modsOnly = true;
+                case "3" -> questsOnly = true;
+            }
+
             return new TranslationConfigDTO(
                     modpackPath, engine, chunkSize,
                     ollamaUrl, ollamaModel, groqUrl, groqModel, groqKeys,
                     null, null, null,
-                    null, null
+                    questsOnly, modsOnly
             );
         }
     }
