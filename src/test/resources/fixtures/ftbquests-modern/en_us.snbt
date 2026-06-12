@@ -1,0 +1,10 @@
+{
+  "ftbquests.title": "Stone Age",
+  quest.example.name: "Getting Started",
+  "quest.example.subtitle": "Your first steps into the unknown",
+  "quest.example.description": ["Gather some wood", "Craft a workbench", "Build a shelter", "Survive the first night"],
+  "chapter.rewards.title": "Chapter Rewards",
+  "quest.rewards.lore": "Awarded for completing all quests in this chapter",
+  "chapter.dependencies": ["quest.example", "quest.tools", "quest.food"],
+  quest.with.dots.key: "This value has a key with dots"
+}

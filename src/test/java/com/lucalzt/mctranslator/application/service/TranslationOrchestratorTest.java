@@ -35,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -715,6 +716,26 @@ class TranslationOrchestratorTest {
 
             verify(translationEngine, times(2)).translate(any());
             verify(questWriter, times(1)).write(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("applies glossary terms during quest translation")
+        void glossaryAppliedDuringQuestTranslation() throws IOException {
+            Path glossaryDir = Files.createDirectories(tempDir.resolve(".mctranslator"));
+            Files.writeString(glossaryDir.resolve("glossary.json"),
+                    "{\"entries\":[{\"termEn\":\"Biome\",\"termEs\":\"Bióma\",\"source\":\"auto\",\"occurrences\":1,\"firstSeen\":\"2025-01-01T00:00:00Z\"}]}");
+
+            orchestrator.setGlossaryPath(tempDir);
+
+            when(questFileDetector.detect(any())).thenReturn(QuestSystemType.FTB_QUESTS_MODERN);
+            when(questExtractor.extract(any())).thenReturn(new QuestData(
+                    QuestSystemType.FTB_QUESTS_MODERN, Map.of("key.biome", "Biome"), new byte[0]));
+            when(checkpointRepository.load("__quests__")).thenReturn(Set.of());
+            when(translationEngine.translate(any())).thenReturn(result(0, "key.biome", "Biome_es"));
+
+            orchestrator.execute(tempDir.toString());
+
+            verify(questWriter, atLeastOnce()).write(any(), any(), any());
         }
     }
 }
