@@ -16,16 +16,39 @@ public class GlossaryAwareTranslator implements TranslationEnginePort {
     static final String GLOSSARY_CONTEXT_KEY = "__glossary_context__";
 
     private static final Set<String> STOPWORDS = Set.of(
-        "You", "Your", "The", "All", "Both", "Each", "Any",
-        "When", "While", "Only", "Always", "Never", "Also", "Just",
-        "Show", "Save", "Insert", "Press", "Move", "Choose",
-        "Select", "Reset", "Configure", "Install", "Rename",
-        "Allow", "Disallow", "Extract", "Cut", "Sort",
-        "Active", "Completed", "Complete", "Disabled", "Locked",
-        "Enabled", "None", "Empty", "Ready", "Found", "Loading",
-        "Options", "Filters", "Description", "Inventory", "Priority",
-        "Mode", "Back", "Next", "Month", "Mod", "Mobs",
-        "Requires", "Determines", "Allows"
+            "Accept", "Active", "Add", "Air", "All",
+            "Allow", "Allows", "Also", "Always", "Amount",
+            "Any", "Are", "Back", "Bad", "Basic",
+            "Better", "Big", "Block", "Both", "Break",
+            "But", "Buy", "Can", "Chance", "Choose",
+            "Click", "Close", "Complete", "Completed", "Configure",
+            "Continue", "Could", "Count", "Cut", "Description",
+            "Determines", "Disabled", "Disallow", "Discard", "Drop",
+            "Each", "Easy", "Edit", "Empty", "Enabled",
+            "End", "Extract", "Fast", "Filters", "First",
+            "For", "Found", "From", "Generate", "Generates",
+            "Get", "Give", "Gives", "Good", "Had",
+            "Has", "Have", "Help", "High", "Hit",
+            "Info", "Insert", "Install", "Into", "Inventory",
+            "Is", "It", "Item", "Items", "Its",
+            "Just", "Keep", "Kill", "Less", "Lets",
+            "Level", "List", "Loading", "Locked", "Logs",
+            "Long", "Low", "Make", "May", "Might",
+            "Mobs", "Mod", "Mode", "Month", "More",
+            "Move", "Must", "Name", "Never", "New",
+            "Next", "None", "Note", "Old", "Only",
+            "Open", "Options", "Other", "Page", "Per",
+            "Pick", "Place", "Press", "Priority", "Put",
+            "Ready", "Remove", "Rename", "Requires", "Reset",
+            "Run", "Same", "Save", "Select", "Sell",
+            "Send", "Set", "Short", "Should", "Show",
+            "Size", "Slot", "Slow", "Small", "Some",
+            "Sort", "Speed", "Stack", "Start", "Stop",
+            "Take", "The", "This", "Time", "Tip",
+            "Tips", "Turn", "Type", "Use", "Used",
+            "Value", "Was", "Were", "When", "While",
+            "Will", "With", "Without", "Would", "You",
+            "Your"
     );
 
     private final TranslationEnginePort delegate;
@@ -137,7 +160,10 @@ public class GlossaryAwareTranslator implements TranslationEnginePort {
                 if (originalTerms.size() == 1 && translatedTerms.size() == 1) {
                     String enTerm = originalTerms.iterator().next();
                     String esTerm = translatedTerms.iterator().next();
-                    glossaryPort.save(enTerm, esTerm);
+
+                    if (originalValue.trim().equals(enTerm) && translatedValue.trim().equals(esTerm)) {
+                        glossaryPort.save(enTerm, esTerm);
+                    }
                 }
             }
         }
